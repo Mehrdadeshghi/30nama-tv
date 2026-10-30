@@ -78,8 +78,8 @@
         });
         av.prepareAsync(function () {
           try { state.dur = av.getDuration() / 1000; } catch (e) {}
+          if (startSec > 5) { try { av.seekTo(Math.floor(startSec * 1000)); state.cur = startSec; } catch (e) {} }
           av.play();
-          if (startSec > 5) { try { av.seekTo(Math.floor(startSec * 1000)); } catch (e) {} }
           P.spin(false);
           if (cb) cb();
         }, function (err) { P.onError(String(err)); });
@@ -122,9 +122,15 @@
       name: 'video',
       load: function (url, startSec, cb) {
         var started = false;
+        var seekFix = startSec > 5;   // AmbiSync-Fork: prüfen, ob die Startzeit wirklich übernommen wurde
+        v.ontimeupdate = function () {
+          if (!seekFix || !(v.readyState >= 1)) return;
+          seekFix = false;
+          if (v.currentTime < startSec - 10) { try { v.currentTime = startSec; } catch (e) {} }
+        };
         function go() {
           if (started) return; started = true;
-          if (startSec > 5) { try { v.currentTime = startSec; } catch (e) {} }
+          if (startSec > 5 && !hls && v.readyState >= 1) { try { v.currentTime = startSec; } catch (e) {} }
           var pr = v.play(); if (pr && pr.catch) pr.catch(function () {});
           P.spin(false); if (cb) cb();
         }
@@ -135,7 +141,8 @@
         v.onloadedmetadata = go;
         var src = N.proxied(url);
         if (window.Hls && Hls.isSupported()) {
-          hls = new Hls({ enableWorker: false, abrEwmaDefaultEstimate: 5000000 }); // open near 1080p instead of 240p
+          // startPosition: hls.js lädt direkt ab der Fortsetzen-Stelle (currentTime vor dem Laden wird ignoriert)
+          hls = new Hls({ enableWorker: false, abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1 }); // open near 1080p instead of 240p
           hls.on(Hls.Events.ERROR, function (ev, d) { if (d && d.fatal) P.onError('hls ' + (d.response && d.response.code ? d.response.code + ' ' : '') + d.details); });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { setTimeout(go, 0); });
           hls.loadSource(src); hls.attachMedia(v);
@@ -276,7 +283,7 @@
   var SCRUB_W = 1740, glyphT = null, unState = null, el = N.el;
   P.spin = function (on) { $('player-spin').classList.toggle('hidden', !on); };
   P.start = function (post, items, index, resume) {
-    P.post = post; P.items = items; P.resume = resume || null; P.open = true; P.qSel = null; P.chSel = null; P.ctl = -1;
+    P.post = post; P.items = items; P.noResume = resume === false; P.resume = resume || null; P.open = true; P.qSel = null; P.chSel = null; P.ctl = -1;
     $('player').classList.remove('hidden');
     P.subPrev = null; SS.apply();
     document.body.classList.add('playing');
@@ -309,6 +316,13 @@
     setOsdText(item, i); buildBtns(item);
     var start = 0, info = item.info || {};
     if (P.resume && String(P.resume.file_id) === String(info.file_id)) start = Number(P.resume.time) || 0;
+    // AmbiSync-Fork: lokal gemerkte Position (pro Film/Folge, unabhängig von Qualität und Datei-ID).
+    // Sie gewinnt, außer der Server ist mehr als 60 s weiter (dann wurde woanders weitergeschaut).
+    if (!P.noResume && !P.reloading) {
+      var loc = N.resume && N.resume.get(P.post && P.post.id, info);
+      if (loc && !(start > loc.t + 60)) start = loc.t;
+    }
+    P.noResume = false; P.reloading = false;
     P.resume = null;
     var cv = N.ui.coverUrl(P.post) || N.ui.posterUrl(P.post), pp = $('player-poster');
     if (!cv) pp.removeAttribute('src'); else if (pp.getAttribute('src') !== cv) pp.src = cv;
@@ -362,7 +376,10 @@
 
   /* ---------- progress reporting (observer) ---------- */
   P.report = function () {
-    if (!P.be || !N.isLoggedIn()) return;
+    if (!P.be) return;
+    var item0 = P.items[P.index], info0 = (item0 && item0.info) || {};
+    try { if (N.resume && !P.loading) N.resume.save(P.post && P.post.id, info0, P.be.time(), P.be.duration()); } catch (e) {}
+    if (!N.isLoggedIn()) return;
     var item = P.items[P.index], info = item.info || {}, u = N.session.user || {};
     N.api.call('observer', {
       post_id: info.post_id || (P.post && P.post.id), file_id: info.file_id,
@@ -657,6 +674,7 @@
     if (!P.be) return;
     var c = P.ctls[P.ctl], k = c && c._kind;
     P.resume = { file_id: (P.items[P.index].info || {}).file_id, time: P.be.time() };
+    P.reloading = true;
     P.playIndex(P.index);
     if (k && P.open) focusKind(k);
   }

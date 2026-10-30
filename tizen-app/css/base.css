@@ -179,3 +179,19 @@ html[dir=rtl] .logo{object-position:right bottom}
 .card.bump-l:not(.k-rev){animation:bumpL 180ms var(--e-unfocus)}
 @keyframes bumpR{50%{transform:translateX(8px)}}
 @keyframes bumpL{50%{transform:translateX(-8px)}}
+
+/* ---------- AmbiSync-Fork: deutlich sichtbare Auswahl auf Covern ----------
+   Vorher nur 10 % größer + Schatten - vom Sofa aus kaum zu erkennen. Jetzt: weißer Rahmen,
+   dunkle Trennkante (wirkt auch auf hellen Covern), Leuchten, stärkere Vergrößerung,
+   nicht ausgewählte Cover in der Reihe leicht abgedunkelt. */
+.card .art{transition:transform var(--d-focus-out) var(--e-unfocus),box-shadow var(--d-focus-out) var(--e-unfocus),filter 200ms var(--e-fade)}
+.card.focus .art{box-shadow:0 0 0 6px #fff,0 0 0 10px rgba(0,0,0,.65),0 0 42px 10px rgba(255,255,255,.45);
+  transition:transform var(--d-focus-in) var(--e-focus),box-shadow var(--d-focus-in) var(--e-focus)}
+.k-p,.k-grid,.k-top{--s:1.14}
+.k-land,.k-ep{--s:1.12}
+.k-cw,.k-tile{--s:1.1}
+.card.focus .ct{color:#fff;font-weight:700}
+/* Titel unter dem ausgewählten Poster: gut lesbar auf hellem Hintergrund */
+.k-p.focus .ct,.k-grid.focus .ct{text-shadow:0 2px 8px rgba(0,0,0,.9)}
+/* Reihe mit Fokus: die anderen Cover etwas dunkler, damit das ausgewählte heraussticht */
+.has-focus>.card:not(.focus) .art,.has-focus>.gcell>.card:not(.focus) .art{filter:brightness(.62)}

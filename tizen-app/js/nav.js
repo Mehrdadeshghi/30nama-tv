@@ -27,6 +27,12 @@
     if (!el) return;
     if (nav.cur && nav.cur !== el) { nav.cur.classList.remove('focus'); }
     nav.cur = el; el.classList.add('focus');
+    // AmbiSync-Fork: Container der ausgewählten Karte markieren (CSS dunkelt die übrigen Cover etwas ab)
+    var pc = null;
+    if (el.classList.contains('card')) { pc = el.parentNode; if (pc && pc.classList && pc.classList.contains('gcell')) pc = pc.parentNode; }
+    if (nav._hf && nav._hf !== pc) nav._hf.classList.remove('has-focus');
+    if (pc && pc.classList) pc.classList.add('has-focus');
+    nav._hf = pc;
     if (el.tagName === 'INPUT') { try { el.focus(); } catch (e) {} }
     else if (document.activeElement && document.activeElement.tagName === 'INPUT') { document.activeElement.blur(); }
     if (!noScroll) nav.ensureVisible(el);
@@ -37,7 +43,7 @@
     for (i = 0; i < c.length; i++) if (visible(c[i])) { nav.focus(c[i]); return c[i]; }
     return null;
   };
-  nav.clear = function () { if (nav.cur) nav.cur.classList.remove('focus'); nav.cur = null; };
+  nav.clear = function () { if (nav.cur) nav.cur.classList.remove('focus'); nav.cur = null; if (nav._hf) { nav._hf.classList.remove('has-focus'); nav._hf = null; } };
 
   nav.ensureVisible = function (el) {
     var p = el.parentNode;

@@ -70,7 +70,21 @@
       if (tmOn) root.classList.add('tm');
       var startIdx = 0;
       if (resume) items.forEach(function (it, i) { if (it.info && String(it.info.file_id) === String(resume.file_id)) startIdx = i; });
-      function play(i, withResume) { lastFocus = N.nav.cur; N.player.start(post, items, i, withResume ? resume : null); }
+      // AmbiSync-Fork: auf dem Fernseher gemerkte Position (siehe js/resume.js). Sie gewinnt, außer der Server
+      // kennt dieselbe Folge mit einer mehr als 60 s späteren Zeit.
+      function localResume() {
+        var loc = N.resume && N.resume.latestFor(post.id); if (!loc) return null;
+        var li = -1;
+        items.forEach(function (it, i) { var f = it.info || {}; if ((+f.season || 0) === loc.season && (+f.episode || 0) === loc.episode) li = i; });
+        if (li < 0) return null;
+        var f0 = items[li].info || {};
+        if (resume && String(resume.file_id) === String(f0.file_id) && (+resume.time || 0) > loc.time + 60) return null;
+        return { i: li, r: { file_id: f0.file_id, time: loc.time, duration: loc.duration, local: true } };
+      }
+      var lr = localResume();
+      if (lr) { resume = lr.r; startIdx = lr.i; }
+      // withResume=false: bewusst von vorn (auch die lokale Position wird dann ignoriert)
+      function play(i, withResume) { lastFocus = N.nav.cur; N.player.start(post, items, i, withResume ? (i === startIdx ? resume : null) : false); }
       function resumeInfo() {
         var t = +(resume && resume.time) || 0, d = +(resume && resume.duration) || 0;
         if (!d) { var cd = N.cwData[post.id], pr = cd && parseFloat(cd.progress); if (pr > 0 && +cd.time) d = cd.time * 100 / pr; else if (!isSeries && info.time && info.time.default) d = info.time.default * 60; }
@@ -112,10 +126,14 @@
       }
       if (ri.frac > 0) { var bar = el('div', 'bar'), bi = el('i'); bi.style.transform = 'scaleX(' + Math.min(1, ri.frac) + ')'; bar.appendChild(bi); playB.appendChild(bar); }
       // resume caption: [S/E] · [N min left], composed from spans + i.dot-s (a literal '·' next to digits reads as a Persian zero)
-      var rparts = [], i0 = (items[startIdx] && items[startIdx].info) || {};
-      if (resume && items.length) { if (isSeries) rparts.push(N.fmt.ep(i0.season || 1, i0.episode || startIdx + 1)); if (ri.left) rparts.push(N.tf('minLeftN', { n: ri.left })); }
-      else if (isSeries && items.length) { var f0 = items[0].info || {}; rparts.push(N.fmt.ep(f0.season || 1, f0.episode || 1)); }
-      if (rparts.length) col.appendChild(ui.dots(el('div', 'd-resume'), rparts));
+      function captionParts() {
+        var rparts = [], i0 = (items[startIdx] && items[startIdx].info) || {};
+        if (resume && items.length) { if (isSeries) rparts.push(N.fmt.ep(i0.season || 1, i0.episode || startIdx + 1)); if (ri.left) rparts.push(N.tf('minLeftN', { n: ri.left })); }
+        else if (isSeries && items.length) { var f0 = items[0].info || {}; rparts.push(N.fmt.ep(f0.season || 1, f0.episode || 1)); }
+        return rparts;
+      }
+      var rparts = captionParts(), capEl = null;
+      if (rparts.length) { capEl = ui.dots(el('div', 'd-resume'), rparts); col.appendChild(capEl); }
       var plotEl = ui.txt(el('div', 'd-plot'), N.plot(post)); col.appendChild(plotEl);
       dpage.appendChild(col); dpage.appendChild(dsecs); root.appendChild(dpage);
 
@@ -366,7 +384,23 @@
         }
       }
       if (tmOn) N.tmdb.details(post).then(function (d) { if (!dead && d) paintTmdb(d); }).catch(function () {});
-      current.onPlayerClosed = function () { var t = lastFocus && lastFocus.offsetWidth > 0 ? lastFocus : playB; N.nav.focus(t, true); };
+      current.onPlayerClosed = function () {
+        // AmbiSync-Fork: sonst kennt die Seite noch die alte Position und "Abspielen" startet wieder bei 0
+        try {
+          var nr = localResume();
+          if (nr && items.length) {
+            resume = nr.r; startIdx = nr.i; ri = resumeInfo();
+            var lab = playB.querySelector('span'); if (lab) lab.textContent = N.t('resume');
+            var ob = playB.querySelector('.bar'); if (ob) playB.removeChild(ob);
+            if (ri.frac > 0) { var nb = el('div', 'bar'), ni = el('i'); ni.style.transform = 'scaleX(' + Math.min(1, ri.frac) + ')'; nb.appendChild(ni); playB.appendChild(nb); }
+            if (!rsB) { rsB = ui.circle('restart', function () { play(startIdx, false); }); btns.insertBefore(rsB, playB.nextSibling); }
+            var np = captionParts(), nc = np.length ? ui.dots(el('div', 'd-resume'), np) : null;
+            if (capEl && nc) col.replaceChild(nc, capEl); else if (capEl) col.removeChild(capEl); else if (nc) col.insertBefore(nc, plotEl);
+            capEl = nc;
+          }
+        } catch (e) {}
+        var t = lastFocus && lastFocus.offsetWidth > 0 ? lastFocus : playB; N.nav.focus(t, true);
+      };
       N.nav.focus(playB, true);
       if (params.autoplay) {
         if (items.length) play(startIdx, true); else noStream();
