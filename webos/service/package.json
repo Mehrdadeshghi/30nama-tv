@@ -1,0 +1,6 @@
+{
+  "name": "com.mehrdad.nama30.service",
+  "version": "1.0.0",
+  "description": "Holt Anfragen, die der Browser des Fernsehers wegen CORS blockiert, serverseitig ab.",
+  "main": "service.js"
+}

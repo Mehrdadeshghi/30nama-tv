@@ -163,9 +163,7 @@
     setTimeout(function () { if (m.el.parentNode) m.el.parentNode.removeChild(m.el); }, 260);
     if (m.prev && m.prev.offsetWidth > 0) N.nav.focus(m.prev, true); else N.nav.clear(); rail.sync();
   };
-  function exitApp() {
-    try { tizen.application.getCurrentApplication().exit(); } catch (e) { N.toast('Exit (not on Tizen)'); }
-  }
+  function exitApp() { N.exitApp(); }
   N.confirmExit = function () {
     N.confirm({ title: N.t('exitTitle'), body: N.t('exitBody'), ok: N.t('exit'), danger: false, onOk: exitApp });
   };

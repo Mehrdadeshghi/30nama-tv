@@ -143,7 +143,15 @@
         if (window.Hls && Hls.isSupported()) {
           // startPosition: hls.js lädt direkt ab der Fortsetzen-Stelle (currentTime vor dem Laden wird ignoriert)
           hls = new Hls({ enableWorker: false, abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1 }); // open near 1080p instead of 240p
-          hls.on(Hls.Events.ERROR, function (ev, d) { if (d && d.fatal) P.onError('hls ' + (d.response && d.response.code ? d.response.code + ' ' : '') + d.details); });
+          hls.on(Hls.Events.ERROR, function (ev, d) {
+            if (!d || !d.fatal) return;
+            // webOS: hls.js loads over XHR and needs CORS on the CDN. If that is refused before playback starts, let
+            // the TV's own HLS player take the stream directly (it needs no CORS).
+            if (N.platform === 'webos' && !started && d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              try { hls.destroy(); } catch (e) {} hls = null; v.src = url; return;
+            }
+            P.onError('hls ' + (d.response && d.response.code ? d.response.code + ' ' : '') + d.details);
+          });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { setTimeout(go, 0); });
           hls.loadSource(src); hls.attachMedia(v);
         } else { v.src = src; }
@@ -155,6 +163,10 @@
       buffered: function () { try { var b = v.buffered, t = v.currentTime || 0; for (var i = 0; i < b.length; i++) if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i); } catch (e) {} return 0; },
       duration: function () { return isFinite(v.duration) ? v.duration : 0; },
       audioTracks: function () {
+        if (!hls && v.audioTracks && v.audioTracks.length > 1) {   // native HLS (webOS fallback)
+          var nt = []; for (var j = 0; j < v.audioTracks.length; j++) nt.push({ id: j, label: langName(v.audioTracks[j].language) || v.audioTracks[j].label || N.tf('track', { n: j + 1 }) });
+          return nt;
+        }
         if (!hls || !hls.audioTracks) return [];
         // renditions often share a generic NAME ('audio') and no LANGUAGE: fall back to the channel count, then 'Track N'
         return hls.audioTracks.map(function (t, i) {
@@ -162,7 +174,10 @@
           return { id: i, label: langName(t.lang) || nm || (ch >= 6 ? N.t('ch6') : ch === 2 ? N.t('ch2') : '') || N.tf('track', { n: i + 1 }) };
         });
       },
-      setAudio: function (id) { if (hls) hls.audioTrack = id; },
+      setAudio: function (id) {
+        if (hls) { hls.audioTrack = id; return; }
+        try { for (var j = 0; j < v.audioTracks.length; j++) v.audioTracks[j].enabled = j === id; } catch (e) {}
+      },
       suspend: function () { try { v.pause(); } catch (e) {} },
       resume: function (paused) { if (!paused) { var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } },
       stop: function () {
@@ -243,7 +258,7 @@
     var item = P.items[P.index], u = item && item.file && subUrl(item.file.subtitle && item.file.subtitle[lang]);
     if (!u) return Promise.resolve();
     if (P.subCache[u]) { P.cues = P.subCache[u]; return Promise.resolve(); }
-    return fetch(N.proxied(u)).then(function (r) { return r.text(); }).then(function (t) {
+    return N.fetch(u).then(function (r) { return r.text(); }).then(function (t) {
       P.subCache[u] = P.parseVTT(t); if (P.subLang === lang) P.cues = P.subCache[u];
     }).catch(function () { N.toast(N.t('subFailed')); });
   };

@@ -109,6 +109,41 @@ jobs:
             install it with an installer that re-signs with your own certificate
             (see the README, Option 2). Also installable as a TizenBrew module.
 
+  # LG webOS: the same app plus a small Luna service (webos/service) that fetches what the TV's web engine
+  # refuses because of CORS. Installed with webOS Dev Manager or ares-install in Developer Mode (no signing needed).
+  ipk:
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set the version from the tag
+        if: github.ref_type == 'tag'
+        run: node tizen-app/tools/set-version.js "${GITHUB_REF_NAME#v}"
+      - name: Build the .ipk
+        run: |
+          npm i -g --no-audit --no-fund @webos-tools/cli
+          rm -f tizen-app/js/tmdb-token.js
+          bash webos/build.sh
+          ls -l dist
+      - name: Verify package contents
+        run: |
+          IPK="$(ls dist/*.ipk | head -1)"; mkdir -p /tmp/ipk && cd /tmp/ipk && ar x "$GITHUB_WORKSPACE/$IPK" && tar tzf data.tar.gz > list.txt
+          grep -q 'applications/com.mehrdad.nama30/appinfo.json' list.txt
+          grep -q 'services/com.mehrdad.nama30.service/service.js' list.txt
+          if grep -E '/tools/|\.p12|tmdb-token.example' list.txt; then echo "forbidden file in ipk"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 30nama-ipk
+          path: dist/*.ipk
+      - name: Publish to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.ipk
+
   # Commit the tag's version to main (only when the tag is on main), so the source and TizenBrew show it as well.
   # Pushes made with GITHUB_TOKEN do not trigger workflows, so this cannot loop.
   sync-version:

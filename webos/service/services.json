@@ -1,0 +1,7 @@
+{
+  "id": "com.mehrdad.nama30.service",
+  "description": "30nama: Netzwerk-Helfer (CORS)",
+  "services": [
+    { "name": "com.mehrdad.nama30.service", "description": "fetch ohne CORS-Sperre" }
+  ]
+}

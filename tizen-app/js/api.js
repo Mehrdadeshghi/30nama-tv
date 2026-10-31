@@ -24,7 +24,7 @@
       'c-version-number': C.apiVersion,
       'c-language': N.lang
     };
-    return timeout(fetch(N.proxied(host + '/action/' + name), { method: 'POST', headers: headers, body: enc(params || {}) }), 20000, name)
+    return timeout(N.fetch(host + '/action/' + name, { method: 'POST', headers: headers, body: enc(params || {}) }), 20000, name)
       .then(function (r) { return r.status === 204 ? null : r.text(); })
       .then(function (txt) {
         // observer may answer 204 / an empty body: that is a success, not 'bad json' (only there, so a blank 200 never passes the host probe)
@@ -36,7 +36,7 @@
   // Try a discovery URL (CORS may block it in a browser; fall back to hardcoded hosts).
   function discover() {
     var tries = C.discoveryUrls.map(function (u) {
-      return timeout(fetch(N.proxied(u + '?t=' + Date.now())).then(function (r) { return r.json(); }), 6000, 'discovery')
+      return timeout(N.fetch(u + '?t=' + Date.now()).then(function (r) { return r.json(); }), 6000, 'discovery')
         .then(function (list) { if (!list || !list.length) throw new Error('empty'); return list; });
     });
     // first success wins
@@ -52,7 +52,7 @@
   function fetchRemoteKey(i) {
     var src = C.keySources[i || 0];
     if (!src) return Promise.reject(new Error('no key source'));
-    return timeout(fetch(N.proxied(src)).then(function (r) { return r.text(); }), 20000, 'key')
+    return timeout(N.fetch(src).then(function (r) { return r.text(); }), 20000, 'key')
       .then(function (txt) { var m = /WEBTV['"]?\s*:\s*['"]([A-Za-z0-9]{24,})['"]/.exec(txt); if (!m) throw new Error('no key'); return m[1]; })
       .catch(function () { return fetchRemoteKey((i || 0) + 1); });
   }

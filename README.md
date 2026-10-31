@@ -58,6 +58,24 @@ Requires [Tizen Studio](https://developer.tizen.org/development/tizen-studio/dow
 ./build.sh <security-profile> [<tv-ip>:26101]    # manual build; with a target it also installs and launches
 ```
 
+## LG webOS (fork addition)
+
+The same app also runs on LG TVs (webOS). `webos/build.sh` packages `tizen-app/` with an `appinfo.json` and a small
+JS service (`webos/service/`). A packaged webOS app runs from `file://`, so the TV's web engine may refuse API calls
+because of CORS; `js/platform.js` then retries them through that service, which fetches them on the TV itself.
+On webOS the Back key is 461, the app exits with `window.close()`, and playback uses hls.js or, if the CDN refuses
+CORS, the TV's own HLS player.
+
+1. Enable Developer Mode: create a free account on the webOS TV developer site, install "Developer Mode" from the
+   LG Content Store, sign in, switch Dev Mode on (the TV restarts), then switch Key Server on.
+2. Install [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) on your PC, add the TV
+   (Key Server must be on) and install `30nama-webos-*.ipk` from the latest release.
+3. Developer Mode expires after its timer runs out and then removes the app. Renew it in the Developer Mode app or
+   with `curl "https://developer.lge.com/secure/ResetDevModeSession.dev?sessionToken=<token>"`
+   (the token is in `/var/luna/preferences/devmode_enabled` on the TV; Dev Manager shows it).
+
+Build locally: `npm i -g @webos-tools/cli && bash webos/build.sh` gives `dist/30nama-webos-<version>.ipk`.
+
 ## Optional: TMDB setup (build-from-source only)
 
 This repo uses TMDB to add trending rows, cast, reviews and recommendations. It is off by default and the app works fully without it.
