@@ -192,13 +192,17 @@
     var t = N.t('lc_' + ch.group); return t === 'lc_' + ch.group ? (ch.gEn || ch.group) : t;
   };
   L.meta = function (ch) { return [L.cat(ch), ch.q || '', ch.geo ? N.t('liveGeo') : '']; };
-  // Telewebion URL -> Worker URL (/<channel>/<rendition>)
+  // Telewebion URL -> Worker URL. Keeps the edge host of the original (/h1102n/tv3/108050p): which edge serves a channel
+  // outside Iran differs per channel. ncdn.telewebion.ir URLs map to /<channel>/<rendition>.
   L.proxied = function (u) {
     var px = N.store.get('liveProxy', '') || N.config.liveProxy;
     if (!px || !L.isTw(u)) return '';
-    var m = /telewebion\.(?:ir|net)\/(?:ek\/)?([a-z0-9_-]+)\/live\/(?:(\d{3,4}p)\/)?/i.exec(u);
+    px = px.replace(/\/+$/, '');
+    var m = /^https?:\/\/live-aburayhan(\d{4})\.telewebion\.(net|ir)\/ek\/([a-z0-9_-]+)\/live\/(\d{3,6}p)\//i.exec(u);
+    if (m) return px + '/h' + m[1] + (m[2] === 'net' ? 'n' : 'i') + '/' + m[3] + '/' + m[4];
+    m = /telewebion\.(?:ir|net)\/(?:ek\/)?([a-z0-9_-]+)\/live\/(?:(\d{3,6}p)\/)?/i.exec(u);
     if (!m) return '';
-    return px.replace(/\/+$/, '') + '/' + m[1] + (m[2] ? '/' + m[2] : '');
+    return px + '/' + m[1] + (m[2] ? '/' + m[2] : '');
   };
 
   /* ================= screen ================= */

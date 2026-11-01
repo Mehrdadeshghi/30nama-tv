@@ -1,5 +1,7 @@
 // Source: https://github.com/shayanline/iptv-iran/blob/3f639ff9eccc08ef3af7820787b352a5e17c7fe4/worker/telewebion-rewrite.js
-// Copyright (c) 2026 Shayan Khaksar, MIT License (see LICENSE-shayanline). Unchanged, so it can be pasted as is.
+// Copyright (c) 2026 Shayan Khaksar, MIT License (see LICENSE-shayanline).
+// 30nama fork changes: optional explicit Telewebion edge host (/h1102n/tv3/108050p = live-aburayhan1102.telewebion.net)
+// so a channel can use the edge that is reachable from outside Iran, and renditions like "108050p".
 /**
  * Telewebion manifest rewriter, for players that cannot handle the original.
  *
@@ -87,7 +89,16 @@ const EDGE_CACHE_SECONDS = 8; // collapses concurrent viewers into one origin fe
 const SEQUENCE_MODULUS = 1_000_000_000;
 
 const SLUG = /^[a-z0-9_-]{1,40}$/i;
-const RENDITION = /^(\d{3,4}p)$/;
+const RENDITION = /^(\d{3,6}p)$/;
+const EDGE = /^h(\d{4})([ni])$/;
+/**
+ * 30nama fork: IRIB TV3 and IRIB Varzesh deliver their video segments only to Iranian IP addresses (HTTP 451).
+ * If you run a server in Iran, put a small relay there (see iran-relay.nginx.conf) and its base URL here, e.g.
+ * "http://203.0.113.10:8080/tw". The manifest still comes through this Worker; only the segments of the channels
+ * below are then fetched through the relay. Empty = off.
+ */
+const IRAN_RELAY = "";
+const IRAN_ONLY = new Set(["tv3", "varzesh"]);   // h1102n -> live-aburayhan1102.telewebion.net, h1107i -> ...telewebion.ir
 const TELEWEBION_HOST = /(^|\.)telewebion\.(ir|net)$/i;
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -144,13 +155,20 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/segment") return proxySegment(request, url);
-    const [, slug, rendition] = url.pathname.split("/");
+    let [, slug, rendition, extra] = url.pathname.split("/");
+    let base = ORIGIN, edge = "";
+    const em = EDGE.exec(slug || "");
+    if (em) {
+      edge = slug;
+      base = `https://live-aburayhan${em[1]}.telewebion.${em[2] === "n" ? "net" : "ir"}/ek`;
+      slug = rendition; rendition = extra;
+    }
 
     if (!slug || !SLUG.test(slug)) {
       return new Response("usage: /<channel>/<rendition>, e.g. /tv1/1080p\n", { status: 400 });
     }
     const quality = RENDITION.test(rendition || "") ? rendition : "1080p";
-    const source = `${ORIGIN}/${slug}/live/${quality}/index.m3u8`;
+    const source = `${base}/${slug}/live/${quality}/index.m3u8`;
 
     if (isNativeMediaRequest(request)) {
       return Response.redirect(source, 302);
@@ -172,7 +190,7 @@ export default {
     const proxyOrigin = /mozilla/i.test(userAgent) ? url.origin : null;
     const cache = caches.default;
     const cacheKey = new Request(
-      `${url.origin}/${slug}/${quality}${proxyOrigin ? "?cors=1" : ""}`,
+      `${url.origin}/${edge ? edge + "/" : ""}${slug}/${quality}${proxyOrigin ? "?cors=1" : ""}`,
       { method: "GET" },
     );
     const cached = await cache.match(cacheKey);
@@ -199,8 +217,12 @@ export default {
     // ncdn only serves manifests and refuses segments, which is the other reason strict
     // players fail on the original URL.
     const body = await upstream.text();
-    const playlist = rewrite(body, upstream.url, proxyOrigin);
+    let playlist = rewrite(body, upstream.url, proxyOrigin);
     if (!playlist) return new Response("unexpected upstream format\n", { status: 502 });
+    if (IRAN_RELAY && IRAN_ONLY.has(slug.toLowerCase())) {
+      // segment URLs -> relay in Iran: https://live-aburayhan1102.telewebion.ir/ek/... -> <relay>/live-aburayhan1102.telewebion.ir/ek/...
+      playlist = playlist.replace(/^https:\/\/(live-aburayhan\d{4}\.telewebion\.(?:ir|net))\//gm, IRAN_RELAY.replace(/\/+$/, "") + "/$1/");
+    }
 
     const response = new Response(playlist, {
       headers: {
