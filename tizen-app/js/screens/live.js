@@ -3,50 +3,61 @@
    Sources are the public M3U lists of iptv-org (only streams the broadcasters offer for free). Nothing is
    reported to 30nama. ES5 only. */
 (function () {
-  var S = N.screens = N.screens || {}, el = N.el, ui = N.ui, K = N.keys, $ = N.$;
+  var S = N.screens = N.screens || {}, el = N.el, ui = N.ui, K = N.keys, $ = N.$, L;
 
-  N.config.liveSources = N.config.liveSources || [
-    'https://iptv-org.github.io/iptv/countries/ir.m3u',
-    'https://iptv-org.github.io/iptv/languages/fas.m3u'
-  ];
-  var CACHE_MS = 6 * 3600 * 1000;
+  // Main source: shayanline/iptv-iran (MIT), a curated list of Iranian and Persian-language TV whose streams are
+  // checked twice a month by pulling real video. "all" adds alternate streams per channel (tried automatically),
+  // "compat" marks streams known to play on limited TV players. iptv-org is the fallback when GitHub Raw fails.
+  var RAW = 'https://raw.githubusercontent.com/shayanline/iptv-iran/main/playlists/';
+  N.config.liveSources = N.config.liveSources || {
+    main: RAW + 'iran.m3u', all: RAW + 'iran-all-streams.m3u', compat: RAW + 'iran-compat.m3u',
+    fallback: ['https://iptv-org.github.io/iptv/countries/ir.m3u', 'https://iptv-org.github.io/iptv/languages/fas.m3u']
+  };
+  // Telewebion (IRIB) media playlists carry a 16-digit EXT-X-MEDIA-SEQUENCE that Samsung AVPlay cannot hold (signed
+  // 32 bit): one frame, then it stops. A small Cloudflare Worker (tools/telewebion-worker/) rewrites the number; the
+  // video itself still comes straight from Telewebion. Set its address here or in localStorage 'n30.liveProxy'.
+  if (N.config.liveProxy === undefined) N.config.liveProxy = '';
+  var CACHE_MS = 6 * 3600 * 1000, CACHE_KEY = 'live.cache2';
   var CH_UP = [427, 33], CH_DOWN = [428, 34];     // Samsung ChannelUp/Down, LG PageUp/PageDown
+  var MAX_TRIES = 5, TRY_MS = 12000;
 
   N.addStrings({
     en: {
       live: 'Live TV', liveAll: 'All', liveFav: 'Favorites', liveChN: '{n} channels', liveLoading: 'Loading channels…',
       liveNone: 'No channels found.', liveFailT: 'This channel is not available right now',
       liveFailGeo: 'The broadcaster only allows viewers in Iran.', liveFailHint: 'Up / Down: next channel · OK: channel list',
+      liveFailTw: 'IRIB channels need the Telewebion helper on Samsung TVs (see the app’s README).',
+      liveTry: 'Trying another stream ({n}/{m})…',
       liveFavOn: 'Added to favorites', liveFavOff: 'Removed from favorites', liveHold: 'Hold OK: add to favorites',
-      liveGeo: 'Iran only', liveSrc: 'Public channels (iptv-org)', liveList: 'Channels', liveBadge: 'LIVE',
+      liveGeo: 'Iran only', liveSrc: 'Channels: iptv-iran (community list)', liveList: 'Channels', liveBadge: 'LIVE',
       lc_news: 'News', lc_sports: 'Sports', lc_kids: 'Kids', lc_music: 'Music', lc_movies: 'Movies', lc_series: 'Series',
       lc_religious: 'Religious', lc_general: 'General', lc_entertainment: 'Entertainment', lc_documentary: 'Documentary',
       lc_culture: 'Culture', lc_education: 'Education', lc_legislative: 'Parliament', lc_business: 'Business',
-      lc_lifestyle: 'Lifestyle', lc_family: 'Family', lc_cooking: 'Cooking', lc_animation: 'Animation', lc_classic: 'Classic',
-      lc_comedy: 'Comedy', lc_travel: 'Travel', lc_science: 'Science', lc_outdoor: 'Outdoor', lc_auto: 'Auto', lc_weather: 'Weather',
-      lc_undefined: 'Other'
+      lc_lifestyle: 'Lifestyle', lc_family: 'Family', lc_undefined: 'Other'
     },
     fa: {
       live: 'پخش زنده', liveAll: 'همه', liveFav: 'علاقه‌مندی‌ها', liveChN: '{n} شبکه', liveLoading: 'در حال دریافت شبکه‌ها…',
       liveNone: 'هیچ شبکه‌ای پیدا نشد.', liveFailT: 'این شبکه الان در دسترس نیست',
       liveFailGeo: 'این شبکه فقط برای بینندگان داخل ایران پخش می‌شود.', liveFailHint: 'بالا / پایین: شبکهٔ بعدی · OK: فهرست شبکه‌ها',
+      liveFailTw: 'شبکه‌های صدا و سیما روی تلویزیون سامسونگ به مبدل تلوبیون نیاز دارند (راهنمای برنامه).',
+      liveTry: 'امتحان پخش دیگر ({n}/{m})…',
       liveFavOn: 'به علاقه‌مندی‌ها اضافه شد', liveFavOff: 'از علاقه‌مندی‌ها حذف شد', liveHold: 'نگه‌داشتن OK: افزودن به علاقه‌مندی‌ها',
-      liveGeo: 'فقط ایران', liveSrc: 'شبکه‌های عمومی (iptv-org)', liveList: 'شبکه‌ها', liveBadge: 'زنده',
+      liveGeo: 'فقط ایران', liveSrc: 'فهرست شبکه‌ها: iptv-iran', liveList: 'شبکه‌ها', liveBadge: 'زنده',
       lc_news: 'خبری', lc_sports: 'ورزشی', lc_kids: 'کودک', lc_music: 'موسیقی', lc_movies: 'فیلم', lc_series: 'سریال',
       lc_religious: 'مذهبی', lc_general: 'عمومی', lc_entertainment: 'سرگرمی', lc_documentary: 'مستند',
       lc_culture: 'فرهنگی', lc_education: 'آموزشی', lc_legislative: 'مجلس', lc_business: 'اقتصادی',
-      lc_lifestyle: 'سبک زندگی', lc_family: 'خانواده', lc_cooking: 'آشپزی', lc_animation: 'انیمیشن', lc_classic: 'کلاسیک',
-      lc_comedy: 'طنز', lc_travel: 'سفر', lc_science: 'علمی', lc_outdoor: 'طبیعت', lc_auto: 'خودرو', lc_weather: 'هواشناسی',
-      lc_undefined: 'سایر'
+      lc_lifestyle: 'سبک زندگی', lc_family: 'خانواده', lc_undefined: 'سایر'
     }
   });
 
   /* ================= channel list ================= */
-  // "#EXTINF:-1 tvg-id=".." tvg-logo=".." group-title="News",IRINN (720p) [Geo-blocked]" + optional #EXTVLCOPT lines + URL
+  function trim(x) { return String(x || '').replace(/^\s+|\s+$/g, ''); }
+  // "#EXTINF:-1 tvg-id=".." tvg-logo=".." group-title="EN | FA" tvg-quality="FHD",EN name | FA name [IR]" + URL
+  // (iptv-org lines look the same with single-language names, "(720p)" and "[Geo-blocked]")
   function parseM3U(txt) {
     var lines = String(txt || '').split(/\r?\n/), out = [], cur = null;
     for (var i = 0; i < lines.length; i++) {
-      var l = lines[i].replace(/^\s+|\s+$/g, '');
+      var l = trim(lines[i]);
       if (!l) continue;
       if (/^#EXTINF/i.test(l)) {
         cur = { attrs: {}, hdr: false };
@@ -61,48 +72,65 @@
     return out.map(function (e) {
       var raw = e.raw, flags = [], qm = /\((\d{3,4}p)\)/.exec(raw);
       raw.replace(/\[([^\]]+)\]/g, function (_, f) { flags.push(f.toLowerCase()); return ''; });
-      var name = raw.replace(/\s*\(\d{3,4}p\)/g, '').replace(/\s*\[[^\]]*\]/g, '').replace(/^\s+|\s+$/g, '') || (e.attrs['tvg-name'] || 'TV');
-      var grp = String(e.attrs['group-title'] || '').split(';')[0].toLowerCase().replace(/^\s+|\s+$/g, '') || 'undefined';
+      var name = trim(raw.replace(/\s*\(\d{3,4}p\)/g, '').replace(/\s*\[[^\]]*\]/g, '')) || e.attrs['tvg-name'] || 'TV';
+      var np = name.split(' | '), gp = String(e.attrs['group-title'] || '').split(' | ');
+      var gEn = trim(gp[0]), gFa = trim(gp[1] || ''), fl = flags.join(' ');
+      if (gEn.indexOf(';') >= 0) gEn = gEn.split(';')[0];
       return {
-        name: name, url: e.url, logo: e.attrs['tvg-logo'] || '', id: e.attrs['tvg-id'] || '', group: grp,
-        q: qm ? parseInt(qm[1], 10) : 0, geo: flags.join(' ').indexOf('geo') >= 0, part: flags.join(' ').indexOf('24/7') >= 0, hdr: e.hdr
+        id: e.attrs['tvg-id'] || '', en: trim(np[0]), fa: trim(np[1] || ''), url: e.url, logo: e.attrs['tvg-logo'] || '',
+        group: gEn.toLowerCase() || 'undefined', gEn: gEn, gFa: gFa,
+        q: e.attrs['tvg-quality'] || (qm ? qm[1] : ''), geo: fl.indexOf('geo') >= 0 || /(^| )ir( |$)/.test(fl),
+        part: fl.indexOf('24/7') >= 0, hdr: e.hdr
       };
     });
   }
-  function key(c) { return (c.id || c.name).toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, ''); }
+  function key(c) { return (c.id || c.en || c.name || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, ''); }
+  L = N.live = { channels: null, loading: null };
+  L.isTw = function (u) { return /^https?:\/\/[^\/]*telewebion\.(ir|net)\//i.test(u); };
+  // shayanline lists: main = channel order and the preferred stream; all = alternates; compat = TV-safe streams
+  function build3(main, all, compat) {
+    var byId = {}, safe = {};
+    compat.forEach(function (c) { safe[c.url] = 1; });
+    all.forEach(function (c) { var k = key(c); (byId[k] = byId[k] || []).push(c.url); });
+    var seen = {};
+    return main.filter(function (c) { var k = key(c); if (seen[k]) return false; seen[k] = 1; return true; }).map(function (c) {
+      var alts = (byId[key(c)] || []).filter(function (u) { return u !== c.url; });
+      alts.sort(function (a, b) { return (safe[b] ? 1 : 0) - (safe[a] ? 1 : 0); });
+      c.alts = alts.slice(0, 8); c.safe = !!safe[c.url]; c.tw = L.isTw(c.url);
+      return c;
+    });
+  }
+  // iptv-org fallback: merge the two lists, best stream per channel, usable ones first
   function merge(lists) {
     var byKey = {}, order = [];
     lists.forEach(function (l) {
       l.forEach(function (c) {
         var k = key(c), o = byKey[k];
-        if (!o) { byKey[k] = c; order.push(k); return; }
-        if (o.url === c.url) return;
-        // two streams of the same channel: keep the better one (no extra headers, not geo-blocked, higher quality)
-        var sc = function (x) { return (x.hdr ? 0 : 4) + (x.geo ? 0 : 2) + (x.q >= 720 ? 1 : 0); };
-        if (sc(c) > sc(o)) { c.logo = c.logo || o.logo; byKey[k] = c; }
+        if (!o) { c.alts = []; byKey[k] = c; order.push(k); return; }
+        if (o.url !== c.url && o.alts.indexOf(c.url) < 0) o.alts.push(c.url);
       });
     });
-    var all = order.map(function (k) { return byKey[k]; });
-    // usable first: no special headers, not geo-blocked, 24/7; then alphabetical
-    all.sort(function (a, b) {
-      var d = (a.hdr - b.hdr) || (a.geo - b.geo) || (a.part - b.part);
-      return d || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-    });
+    var all = order.map(function (k) { var c = byKey[k]; c.tw = L.isTw(c.url); return c; });
+    all.sort(function (a, b) { return ((a.hdr - b.hdr) || (a.geo - b.geo) || (a.part - b.part)) || a.en.toLowerCase().localeCompare(b.en.toLowerCase()); });
     return all;
   }
-  var L = N.live = { channels: null, loading: null };
+  function get(u) {
+    return N.fetch(u).then(function (r) { if (!r.ok) throw new Error('m3u ' + r.status); return r.text(); }).then(parseM3U);
+  }
   L.load = function (force) {
-    var c = N.store.get('live.cache', null);
+    var c = N.store.get(CACHE_KEY, null), src = N.config.liveSources;
     if (!force && c && c.list && c.list.length && Date.now() - c.t < CACHE_MS) { L.channels = c.list; return Promise.resolve(c.list); }
     if (L.loading) return L.loading;
-    L.loading = Promise.all(N.config.liveSources.map(function (u) {
-      return N.fetch(u).then(function (r) { if (!r.ok) throw new Error('m3u ' + r.status); return r.text(); })
-        .then(parseM3U, function () { return []; });
-    })).then(function (lists) {
+    var soft = function (u) { return get(u).catch(function () { return []; }); };
+    L.loading = get(src.main).then(function (main) {
+      if (!main.length) throw new Error('empty');
+      return Promise.all([soft(src.all), soft(src.compat)]).then(function (r) { return build3(main, r[0], r[1]); });
+    }).catch(function () {
+      return Promise.all(src.fallback.map(soft)).then(merge);
+    }).then(function (all) {
       L.loading = null;
-      var all = merge(lists);
       if (!all.length) { if (c && c.list && c.list.length) { L.channels = c.list; return c.list; } throw new Error('no channels'); }
-      L.channels = all; N.store.set('live.cache', { t: Date.now(), list: all });
+      L.channels = all; N.store.set(CACHE_KEY, { t: Date.now(), list: all });
       return all;
     }, function (e) { L.loading = null; if (c && c.list) { L.channels = c.list; return c.list; } throw e; });
     return L.loading;
@@ -115,7 +143,22 @@
     N.store.set('live.favs', f); N.toast(N.t(i >= 0 ? 'liveFavOff' : 'liveFavOn'), 1800);
     return i < 0;
   };
-  L.catName = function (g) { var t = N.t('lc_' + g); return t === 'lc_' + g ? g : t; };
+  // display name / category in the UI language
+  L.nm = function (ch) { return (N.lang === 'fa' ? (ch.fa || ch.en) : (ch.en || ch.fa)) || ch.name || 'TV'; };
+  function shortGroup(t) { var i = t.lastIndexOf(' · '); return i >= 0 ? t.slice(i + 3) : t; }
+  L.cat = function (ch) {
+    if (ch.gFa || /\w \w/.test(ch.gEn || '')) return shortGroup(N.lang === 'fa' ? (ch.gFa || ch.gEn) : (ch.gEn || ch.gFa));
+    var t = N.t('lc_' + ch.group); return t === 'lc_' + ch.group ? (ch.gEn || ch.group) : t;
+  };
+  L.meta = function (ch) { return [L.cat(ch), ch.q || '', ch.geo ? N.t('liveGeo') : '']; };
+  // Telewebion URL -> Worker URL (/<channel>/<rendition>)
+  L.proxied = function (u) {
+    var px = N.store.get('liveProxy', '') || N.config.liveProxy;
+    if (!px || !L.isTw(u)) return '';
+    var m = /telewebion\.(?:ir|net)\/(?:ek\/)?([a-z0-9_-]+)\/live\/(?:(\d{3,4}p)\/)?/i.exec(u);
+    if (!m) return '';
+    return px.replace(/\/+$/, '') + '/' + m[1] + (m[2] ? '/' + m[2] : '');
+  };
 
   /* ================= screen ================= */
   var COLS = 6;
@@ -133,15 +176,15 @@
     var c = el('div', 'card f k-ch'), art = el('div', 'art');
     c.appendChild(el('i', 'lift'));
     art.appendChild(el('div', 'chn tab', String(num)));
-    var ph = el('div', 'ph'); ph.appendChild(ui.txt(el('span'), ch.name)); art.appendChild(ph);
+    var ph = el('div', 'ph'); ph.appendChild(ui.txt(el('span'), L.nm(ch))); art.appendChild(ph);
     if (ch.logo) { var im = el('img', 'im'); im.alt = ''; im.decoding = 'async'; art.appendChild(im); c._im = im; c._src = ch.logo; }
     if (L.isFav(ch)) c.classList.add('fav');
     art.appendChild(el('i', 'favdot'));
     art.appendChild(el('i', 'sheen'));
     c.appendChild(art); c._art = art;
     var cap = el('div', 'cap'), ct = el('div', 'ct'), cs = el('div', 'cs');
-    ui.txt(ct, ch.name);
-    ui.dots(cs, [L.catName(ch.group), ch.q ? ch.q + 'p' : '', ch.geo ? N.t('liveGeo') : '']);
+    ui.txt(ct, L.nm(ch));
+    ui.dots(cs, [ch.q || '', ch.geo ? N.t('liveGeo') : '']);
     cap.appendChild(ct); cap.appendChild(cs); c.appendChild(cap);
     return c;
   }
@@ -163,8 +206,9 @@
     head.appendChild(ht); head.appendChild(cnt); box.appendChild(head);
     var bar = el('div', 'lv-pills'); box.appendChild(bar);
     var grid = el('div', 'ggrid lv-grid'); box.appendChild(grid);
-    var foot = el('div', 'lv-foot', N.t('liveHold') + ' · ' + N.t('liveSrc')); box.appendChild(foot);
-    box.reveal = function (e) { ui.vscroll(box, e._cell || e, 220); };
+    var foot = el('div', 'lv-foot', N.t('liveHold') + ' · ' + N.t('liveSrc')); root.appendChild(foot);
+    var gridTop = 250;
+    box.reveal = function (e) { if (pills.indexOf(e) >= 0) { ui.vscroll(box, bar, 150); return; } ui.vscroll(box, e._cell || e, gridTop); };
     var msg = el('div', 'nores', N.t('liveLoading')); box.appendChild(msg);
 
     function shown() {
@@ -176,19 +220,30 @@
     function curPill() { for (var i = 0; i < pills.length; i++) if (pills[i]._k === filter) return pills[i]; return pills[0]; }
     function buildPills() {
       bar.innerHTML = ''; pills = [];
-      var counts = {}, all = L.channels || [];
-      all.forEach(function (c) { counts[c.group] = (counts[c.group] || 0) + 1; });
-      var groups = Object.keys(counts).filter(function (g) { return g !== 'undefined'; }).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 7);
+      var rep = {}, groups = [], all = L.channels || [];
+      all.forEach(function (c) { if (c.group !== 'undefined' && !rep[c.group]) { rep[c.group] = c; groups.push(c.group); } });
+      if (groups.length > 14) groups = groups.slice(0, 14);
       var keys = ['all'].concat(L.favs().length ? ['fav'] : []).concat(groups);
       if (keys.indexOf(filter) < 0) filter = 'all';
       keys.forEach(function (k) {
-        var p = ui.pill(k === 'all' ? N.t('liveAll') : k === 'fav' ? N.t('liveFav') : L.catName(k), function () {
+        var p = ui.pill(k === 'all' ? N.t('liveAll') : k === 'fav' ? N.t('liveFav') : L.cat(rep[k]), function () {
           if (filter === k) return; filter = k; paintPills(); paintGrid(true);
         }, filter === k);
         p._k = k;
-        p.onnav = function (dir) { if (dir === 'down') return cards[0] || true; if (dir === 'up') return true; return false; };
+        p.onnav = function (dir, cur) {
+          // pills may wrap onto a second row: up/down move between rows first, then into the grid
+          var r = cur.getBoundingClientRect(), best = null, bd = 1e9;
+          for (var i = 0; i < pills.length; i++) {
+            var q = pills[i].getBoundingClientRect();
+            if (dir === 'down' ? q.top > r.bottom - 4 : q.bottom < r.top + 4) { var dd = Math.abs((q.left + q.right) / 2 - (r.left + r.right) / 2) + Math.abs(q.top - r.top) * 3; if (dd < bd) { bd = dd; best = pills[i]; } }
+          }
+          if (dir === 'down') return best || cards[0] || true;
+          if (dir === 'up') return best || true;
+          return false;
+        };
         bar.appendChild(p); pills.push(p);
       });
+      gridTop = 150 + bar.offsetHeight + 40; grid.style.top = gridTop + 'px';
     }
     function paintPills() { pills.forEach(function (p) { p.classList.toggle('cur', p._k === filter); }); }
     function paintGrid(focusFirst, want) {
@@ -255,6 +310,7 @@
     d.clock = el('div', 'lv-clock tab'); d.osd.appendChild(d.clock);
     d.root.appendChild(d.osd);
     d.err = el('div', 'lv-err off'); d.root.appendChild(d.err);
+    d.tries = el('div', 'lv-tries off'); d.root.appendChild(d.tries);
     d.entry = el('div', 'lv-entry tab off'); d.root.appendChild(d.entry);
     d.panel = el('div', 'lv-panel off'); d.ph = el('div', 'lv-ph', N.t('liveList')); d.rows = el('div', 'lv-rows');
     d.panel.appendChild(d.ph); d.panel.appendChild(d.rows); d.root.appendChild(d.panel);
@@ -263,11 +319,11 @@
   }
 
   // one backend per tune: AVPlay (Samsung app), else <video> with hls.js and the engine's own HLS as fallback
-  function backend(url, ok, fail) {
+  function backend(url, how, ok, fail) {
     var d = V.dom, done = false, started = false;
     function good() { if (started) return; started = true; ok(); }
     function bad(m) { if (done) return; done = true; fail(m); }
-    if (hasAV()) {
+    if (how === 'av' && hasAV()) {
       var av = webapis.avplay;
       $('avplayObj').style.display = 'block'; document.body.classList.add('av'); document.documentElement.classList.add('avh');
       try { av.close(); } catch (e) {}
@@ -294,6 +350,7 @@
     v.onended = function () { bad('ended'); };
     function goNative() {
       native = true; if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+      if (hasAV()) { bad('hls'); return; }   // Samsung: the native player is AVPlay again, already tried
       v.src = url; var p = v.play(); if (p && p.catch) p.catch(function () {});
     }
     if (window.Hls && Hls.isSupported()) {
@@ -317,8 +374,8 @@
   function showOsd(ms) {
     var d = V.dom, ch = V.list[V.idx]; if (!ch) return;
     d.num.textContent = String(V.idx + 1);
-    d.name.innerHTML = ''; d.name.appendChild(ui.txt(el('span'), ch.name));   // dir=ltr only on the inner span (keeps the box on the start side in RTL)
-    d.meta.innerHTML = ''; ui.dots(d.meta, [L.catName(ch.group), ch.q ? ch.q + 'p' : '', ch.geo ? N.t('liveGeo') : '']);
+    d.name.innerHTML = ''; d.name.appendChild(ui.txt(el('span'), L.nm(ch)));   // dir=ltr only on the inner span (keeps the box on the start side in RTL)
+    d.meta.innerHTML = ''; ui.dots(d.meta, L.meta(ch));
     if (ch.logo) { d.logo.style.display = ''; if (d.logo.getAttribute('src') !== ch.logo) d.logo.src = ch.logo; } else d.logo.style.display = 'none';
     d.logo.onerror = function () { d.logo.style.display = 'none'; };
     d.clock.textContent = clock();
@@ -326,26 +383,53 @@
     V.osdT = setTimeout(function () { if (!V.panel) d.osd.classList.add('off'); }, ms || 4000);
   }
   function showErr(ch, m) {
-    var d = V.dom; d.spin.classList.remove('on'); d.err.innerHTML = '';
+    var d = V.dom; d.spin.classList.remove('on'); d.err.innerHTML = ''; d.tries.classList.add('off');
     d.err.appendChild(ui.icon('warn'));
     d.err.appendChild(el('div', 'et', N.t('liveFailT')));
     if (ch && ch.geo) d.err.appendChild(el('div', 'ed', N.t('liveFailGeo')));
+    else if (ch && ch.tw && hasAV() && !L.proxied(ch.url)) d.err.appendChild(el('div', 'ed', N.t('liveFailTw')));
     d.err.appendChild(el('div', 'eh', N.t('liveFailHint')));
     d.err.classList.remove('off');
-    try { console.warn('live: ' + (ch && ch.name) + ' failed: ' + m); } catch (e) {}
+    try { console.warn('live: ' + (ch && ch.en) + ' failed: ' + m); } catch (e) {}
+  }
+  // what to try for a channel, in order: per stream (main, then alternates) the best way to play it
+  function attempts(ch) {
+    var urls = [ch.url].concat(ch.alts || []), out = [], seen = {};
+    function add(u, how) { var k = how + ' ' + u; if (u && !seen[k]) { seen[k] = 1; out.push({ url: u, how: how }); } }
+    urls.forEach(function (u) {
+      if (L.isTw(u)) {
+        if (hasAV()) add(L.proxied(u), 'av');   // AVPlay only through the rewriting Worker (sequence number)
+        add(u, 'hls');                            // hls.js reads the original (if the engine allows the request)
+      } else {
+        if (hasAV()) add(u, 'av');
+        add(u, 'hls');
+      }
+    });
+    return out.slice(0, MAX_TRIES);
   }
   function tune(i) {
     var d = V.dom, n = V.list.length; if (!n) return;
     i = ((i % n) + n) % n; V.idx = i; L.lastIdx = i; L.lastCh = V.list[i];
     if (V.be) { V.be.stop(); V.be = null; }
-    clearTimeout(V.startT); d.err.classList.add('off'); d.spin.classList.add('on'); V.paused = false; d.root.classList.remove('paused');
+    clearTimeout(V.startT); d.err.classList.add('off'); d.tries.classList.add('off'); d.spin.classList.add('on'); V.paused = false; d.root.classList.remove('paused');
     var ch = V.list[i]; N.store.set('live.last', key(ch));
     showOsd();
-    var my = {};
+    var my = {}, list = attempts(ch), t = 0;
     V.cur = my;
-    V.be = backend(ch.url, function () { if (V.cur !== my) return; clearTimeout(V.startT); d.spin.classList.remove('on'); },
-      function (m) { if (V.cur !== my) return; clearTimeout(V.startT); if (V.be) { V.be.stop(); V.be = null; } showErr(ch, m); showOsd(8000); });
-    V.startT = setTimeout(function () { if (V.cur === my) { if (V.be) V.be.stop(); V.be = null; showErr(ch, 'timeout'); showOsd(8000); } }, 20000);
+    function next(m) {
+      if (V.cur !== my) return;
+      clearTimeout(V.startT); if (V.be) { V.be.stop(); V.be = null; }
+      if (t >= list.length) { showErr(ch, m); showOsd(8000); return; }
+      var a = list[t++];
+      if (t > 1) { d.tries.textContent = N.tf('liveTry', { n: t, m: list.length }); d.tries.classList.remove('off'); }
+      d.spin.classList.add('on');
+      V.be = backend(a.url, a.how, function () {
+        if (V.cur !== my) return; clearTimeout(V.startT); d.spin.classList.remove('on'); d.tries.classList.add('off');
+        try { console.log('live: ' + ch.en + ' plays via ' + a.how + ' ' + a.url); } catch (e) {}
+      }, function (e) { next(a.how + ': ' + e); });
+      V.startT = setTimeout(function () { next(a.how + ': timeout'); }, TRY_MS);
+    }
+    next('');
     if (V.panel) renderPanel();
   }
   function renderPanel() {
@@ -355,7 +439,7 @@
       var ch = V.list[i], r = el('div', 'lv-row' + (i === V.sel ? ' sel' : '') + (i === V.idx ? ' cur' : ''));
       r.appendChild(el('span', 'rn tab', String(i + 1)));
       if (ch.logo) { var im = el('img', 'rl'); im.alt = ''; im.onerror = function () { this.style.visibility = 'hidden'; }; im.src = ch.logo; r.appendChild(im); } else r.appendChild(el('span', 'rl'));
-      r.appendChild(ui.txt(el('span', 'rt'), ch.name));
+      r.appendChild(ui.txt(el('span', 'rt'), L.nm(ch)));
       d.rows.appendChild(r);
     }
   }

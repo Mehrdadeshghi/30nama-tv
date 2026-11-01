@@ -1,11 +1,11 @@
 /* Live TV (screens/live.js): channel grid + full-screen live player. Fork addition. */
 /* ---------- grid ---------- */
 .k-ch{--w:250px;--h:160px;--r:14px;--s:1.1}
-.live-s .lv-pills{position:absolute;top:150px;inset-inline-start:90px;inset-inline-end:90px;display:flex;flex-wrap:nowrap;overflow:visible}
-.live-s .lv-pills .pill+.pill{margin-inline-start:12px}
+.live-s .lv-pills{position:absolute;top:150px;inset-inline-start:90px;inset-inline-end:90px;display:flex;flex-wrap:wrap;row-gap:12px}
+.live-s .lv-pills .pill{margin-inline-end:12px}
 .live-s .lv-grid{top:250px;column-gap:48px;row-gap:36px}
 .live-s .lv-grid .lv-cell{width:250px;height:256px}
-.live-s .lv-foot{position:absolute;top:1000px;inset-inline-start:90px;font-size:23px;color:var(--label-3)}
+.live-s .lv-foot{position:absolute;bottom:0;left:0;right:0;padding:40px 90px 22px;font-size:23px;color:var(--label-3);background:linear-gradient(to top,#000 40%,rgba(0,0,0,0));z-index:3}
 .live-s .nores{top:330px}
 .card.k-ch .art{background:linear-gradient(160deg,#2c2c2e 0%,#1c1c1e 70%)}
 .card.k-ch .im{left:22%;top:16%;width:56%;height:68%;object-fit:contain}
@@ -55,3 +55,5 @@ body.av #lvideo{display:none}
 .lv-row .rn{width:70px;font-size:25px;font-weight:600}
 .lv-row .rl{width:80px;height:52px;object-fit:contain;margin-inline-end:20px;display:inline-block}
 .lv-row .rt{flex:1;font-size:29px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lv-tries{position:absolute;left:0;top:600px;width:1920px;text-align:center;font-size:25px;color:var(--label-2)}
+.lv-tries.off{display:none}
