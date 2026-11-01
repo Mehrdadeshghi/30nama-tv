@@ -87,6 +87,7 @@
       advT = setInterval(autoAdvance, 1000);
       if (logged) refreshWl(false);
       tmSetup();
+      liveRow();
     }
     // instant layout change for the page AND the stage art (the .mv wrapper lives outside root)
     function still(fn) {
@@ -100,6 +101,15 @@
     // one row = {d, row, tr, cs, ws}; d.posts are cards in order. Closures resolve row/card indexes lazily (rows and cards can be inserted/removed).
     function addCard(r, p, i) {
       var d = r.d, c, w;
+      if (d.kind === 'live') {   // fork: live channel card, OK plays the channel straight away
+        c = N.live.card(p, 0); w = 250;
+        c.onfocus2 = function () { onCardFocus(defs.indexOf(d), r.cs.indexOf(c)); };
+        c.onclick = function () { N.live.play(d.posts, d.posts.indexOf(p)); };
+        c._lp = function () { c.classList.toggle('fav', N.live.toggleFav(p)); };
+        r.tr.appendChild(c); r.cs.push(c); r.ws.push(w);
+        if (i < 10) ui.load(c);
+        return;
+      }
       if (d.kind === 'cw') { c = N.cwCard(p); w = 548; } else if (d.kind === 'land') { c = ui.card(p, 'land'); w = 404; }
       else if (d.kind === 'top') { c = ui.card(p, 'top', { rank: i + 1 }); w = i + 1 >= 10 ? 440 : 360; }
       else { c = ui.card(p, 'poster'); w = 250; }
@@ -127,6 +137,15 @@
       if (d.kind === 'cw' && d.posts.length > 6) addMore(r);
       ui.layoutTrack(tr, r.cs, r.ws, 40);
       return r;
+    }
+    // fork: "Live TV" row right after Continue Watching (async: the channel list may still be loading)
+    function liveRow() {
+      if (!N.live || !N.store.get('liveHome', true)) return;
+      N.live.load(false).then(function () {
+        if (dead || keyIndex('live') >= 0) return;
+        var ps = N.live.homeList(); if (!ps.length) return;
+        insertRowAt(makeRow({ key: 'live', kind: 'live', title: N.t('live'), posts: ps }), keyIndex('cw') + 1);
+      }).catch(function () {});
     }
     function pushRow(r) { if (defs.indexOf(r.d) < 0) defs.push(r.d); rowEls.push(r.row); tracks.push(r.tr); cards.push(r.cs); mem.push(0); rowsEl.appendChild(r.row); rowObjs.push(r); }
     function recalcTops() { tops.length = 0; for (var k = 0; k < rowEls.length; k++) tops.push(rowEls[k].offsetTop); if (noteEl) tops.push(noteEl.offsetTop); }

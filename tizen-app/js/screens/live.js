@@ -27,7 +27,11 @@
       liveNone: 'No channels found.', liveFailT: 'This channel is not available right now',
       liveFailGeo: 'The broadcaster only allows viewers in Iran.', liveFailHint: 'Up / Down: next channel · OK: channel list',
       liveFailTw: 'IRIB channels need the Telewebion helper on Samsung TVs (see the app’s README).',
-      liveTry: 'Trying another stream ({n}/{m})…',
+      liveTry: 'Trying another stream ({n}/{m})…', liveRecent: 'Recently watched', liveDown: 'did not play recently',
+      liveKOk: 'Channel list', liveKFav: 'Favorite', liveKUnfav: 'Unfavorite', liveKSleep: 'Sleep timer', liveKPrev: 'Previous channel',
+      livePanelKeys: '◀ ▶ category · OK watch · red favorite', liveSleepOn: 'Sleep timer: {n} minutes', liveSleepOff: 'Sleep timer off',
+      liveSleepLeft: 'Off in {n} min', liveSleepEnd: 'Sleep timer: good night', liveStart: 'On start', liveStartHome: 'Home',
+      liveStartLive: 'Live TV', liveStartLast: 'Last channel', liveHomeRow: 'Live TV row on Home', liveRefresh: 'Reload channel list', liveRefreshed: 'Channel list updated',
       liveFavOn: 'Added to favorites', liveFavOff: 'Removed from favorites', liveHold: 'Hold OK: add to favorites',
       liveGeo: 'Iran only', liveSrc: 'Channels: iptv-iran (community list)', liveList: 'Channels', liveBadge: 'LIVE',
       lc_news: 'News', lc_sports: 'Sports', lc_kids: 'Kids', lc_music: 'Music', lc_movies: 'Movies', lc_series: 'Series',
@@ -40,7 +44,11 @@
       liveNone: 'هیچ شبکه‌ای پیدا نشد.', liveFailT: 'این شبکه الان در دسترس نیست',
       liveFailGeo: 'این شبکه فقط برای بینندگان داخل ایران پخش می‌شود.', liveFailHint: 'بالا / پایین: شبکهٔ بعدی · OK: فهرست شبکه‌ها',
       liveFailTw: 'شبکه‌های صدا و سیما روی تلویزیون سامسونگ به مبدل تلوبیون نیاز دارند (راهنمای برنامه).',
-      liveTry: 'امتحان پخش دیگر ({n}/{m})…',
+      liveTry: 'امتحان پخش دیگر ({n}/{m})…', liveRecent: 'اخیراً دیده‌شده', liveDown: 'اخیراً پخش نشد',
+      liveKOk: 'فهرست شبکه‌ها', liveKFav: 'علاقه‌مندی', liveKUnfav: 'حذف از علاقه‌مندی', liveKSleep: 'تایمر خواب', liveKPrev: 'شبکهٔ قبلی',
+      livePanelKeys: '◀ ▶ دسته · OK تماشا · قرمز علاقه‌مندی', liveSleepOn: 'تایمر خواب: {n} دقیقه', liveSleepOff: 'تایمر خواب خاموش',
+      liveSleepLeft: 'خاموشی تا {n} دقیقه', liveSleepEnd: 'تایمر خواب: شب بخیر', liveStart: 'هنگام شروع', liveStartHome: 'خانه',
+      liveStartLive: 'پخش زنده', liveStartLast: 'آخرین شبکه', liveHomeRow: 'ردیف پخش زنده در خانه', liveRefresh: 'به‌روزرسانی فهرست شبکه‌ها', liveRefreshed: 'فهرست شبکه‌ها به‌روز شد',
       liveFavOn: 'به علاقه‌مندی‌ها اضافه شد', liveFavOff: 'از علاقه‌مندی‌ها حذف شد', liveHold: 'نگه‌داشتن OK: افزودن به علاقه‌مندی‌ها',
       liveGeo: 'فقط ایران', liveSrc: 'فهرست شبکه‌ها: iptv-iran', liveList: 'شبکه‌ها', liveBadge: 'زنده',
       lc_news: 'خبری', lc_sports: 'ورزشی', lc_kids: 'کودک', lc_music: 'موسیقی', lc_movies: 'فیلم', lc_series: 'سریال',
@@ -117,9 +125,18 @@
   function get(u) {
     return N.fetch(u).then(function (r) { if (!r.ok) throw new Error('m3u ' + r.status); return r.text(); }).then(parseM3U);
   }
+  // Instant from the stored list (any age); a list older than CACHE_MS is refreshed in the background for next time.
   L.load = function (force) {
-    var c = N.store.get(CACHE_KEY, null), src = N.config.liveSources;
-    if (!force && c && c.list && c.list.length && Date.now() - c.t < CACHE_MS) { L.channels = c.list; return Promise.resolve(c.list); }
+    var c = N.store.get(CACHE_KEY, null);
+    if (!force && c && c.list && c.list.length) {
+      L.channels = L.channels || c.list;
+      if (Date.now() - c.t >= CACHE_MS && !L.loading) L.fetchList(c).catch(function () {});
+      return Promise.resolve(L.channels);
+    }
+    return L.fetchList(c);
+  };
+  L.fetchList = function (c) {
+    var src = N.config.liveSources;
     if (L.loading) return L.loading;
     var soft = function (u) { return get(u).catch(function () { return []; }); };
     L.loading = get(src.main).then(function (main) {
@@ -143,6 +160,30 @@
     N.store.set('live.favs', f); N.toast(N.t(i >= 0 ? 'liveFavOff' : 'liveFavOn'), 1800);
     return i < 0;
   };
+  L.key = key;
+  L.byKey = function (k) { var a = L.channels || []; for (var i = 0; i < a.length; i++) if (key(a[i]) === k) return a[i]; return null; };
+  // recently watched (newest first)
+  L.recent = function () { return N.store.get('live.recent', []); };
+  L.noteRecent = function (ch) {
+    var r = L.recent(), k = key(ch), i = r.indexOf(k);
+    if (i >= 0) r.splice(i, 1); r.unshift(k); N.store.set('live.recent', r.slice(0, 20));
+  };
+  // per channel: the stream that played last time (tried first next time) or when it last failed completely
+  var HEALTH = N.store.get('live.health', {});
+  L.health = function (ch) { return HEALTH[key(ch)] || null; };
+  function saveHealth(ch, h) { HEALTH[key(ch)] = h; N.store.set('live.health', HEALTH); }
+  L.unstable = function (ch) { var h = L.health(ch); return !!(h && h.f && Date.now() - h.f < 24 * 3600 * 1000); };
+  // list -> channel objects for a key list
+  L.pick = function (keys) { var out = []; keys.forEach(function (k) { var c = L.byKey(k); if (c) out.push(c); }); return out; };
+  // "your channels" for the Home row: recently watched, then favourites, filled up with the first national channels
+  L.homeList = function () {
+    var out = [], seen = {};
+    function add(c) { var k = key(c); if (c && !seen[k]) { seen[k] = 1; out.push(c); } }
+    L.pick(L.recent()).forEach(add); L.pick(L.favs()).forEach(add);
+    (L.channels || []).slice(0, 12).forEach(function (c) { if (out.length < 12) add(c); });
+    return out.slice(0, 16);
+  };
+
   // display name / category in the UI language
   L.nm = function (ch) { return (N.lang === 'fa' ? (ch.fa || ch.en) : (ch.en || ch.fa)) || ch.name || 'TV'; };
   function shortGroup(t) { var i = t.lastIndexOf(' · '); return i >= 0 ? t.slice(i + 3) : t; }
@@ -175,19 +216,21 @@
   function chCard(ch, num) {
     var c = el('div', 'card f k-ch'), art = el('div', 'art');
     c.appendChild(el('i', 'lift'));
-    art.appendChild(el('div', 'chn tab', String(num)));
-    var ph = el('div', 'ph'); ph.appendChild(ui.txt(el('span'), L.nm(ch))); art.appendChild(ph);
+    if (num) art.appendChild(el('div', 'chn tab', String(num)));
     if (ch.logo) { var im = el('img', 'im'); im.alt = ''; im.decoding = 'async'; art.appendChild(im); c._im = im; c._src = ch.logo; }
+    var ph = el('div', 'ph'); ph.appendChild(ui.txt(el('span'), L.nm(ch))); art.appendChild(ph);
     if (L.isFav(ch)) c.classList.add('fav');
+    if (L.unstable(ch)) c.classList.add('down');
     art.appendChild(el('i', 'favdot'));
     art.appendChild(el('i', 'sheen'));
     c.appendChild(art); c._art = art;
     var cap = el('div', 'cap'), ct = el('div', 'ct'), cs = el('div', 'cs');
     ui.txt(ct, L.nm(ch));
-    ui.dots(cs, [ch.q || '', ch.geo ? N.t('liveGeo') : '']);
+    ui.dots(cs, [ch.q || '', ch.geo ? N.t('liveGeo') : L.unstable(ch) ? N.t('liveDown') : '']);
     cap.appendChild(ct); cap.appendChild(cs); c.appendChild(cap);
     return c;
   }
+  L.card = chCard;
 
   // logos: own lazy loader (hides the name placeholder once a logo is there; drops broken logos)
   function chLoad(c) {
@@ -199,7 +242,7 @@
   }
 
   S.live = function (root, params, restore) {
-    var dead = false, cards = [], pills = [], filter = (restore && restore.f) || 'all', list = [];
+    var dead = false, cards = [], pills = [], filter = (restore && restore.f) || N.store.get('live.filter', 'all'), list = [];
     root.classList.add('live-s'); N.stage.neutral(true);
     var box = el('div', 'arch'); root.appendChild(box);
     var head = el('div', 'ah'), ht = el('span', 'ht', N.t('live')), cnt = el('small', 'cnt', '');
@@ -213,7 +256,8 @@
 
     function shown() {
       var all = L.channels || [];
-      if (filter === 'fav') return all.filter(L.isFav);
+      if (filter === 'fav') return L.pick(L.favs());
+      if (filter === 'recent') return L.pick(L.recent());
       if (filter === 'all') return all;
       return all.filter(function (c) { return c.group === filter; });
     }
@@ -223,11 +267,11 @@
       var rep = {}, groups = [], all = L.channels || [];
       all.forEach(function (c) { if (c.group !== 'undefined' && !rep[c.group]) { rep[c.group] = c; groups.push(c.group); } });
       if (groups.length > 14) groups = groups.slice(0, 14);
-      var keys = ['all'].concat(L.favs().length ? ['fav'] : []).concat(groups);
+      var keys = ['all'].concat(L.recent().length ? ['recent'] : []).concat(L.favs().length ? ['fav'] : []).concat(groups);
       if (keys.indexOf(filter) < 0) filter = 'all';
       keys.forEach(function (k) {
-        var p = ui.pill(k === 'all' ? N.t('liveAll') : k === 'fav' ? N.t('liveFav') : L.cat(rep[k]), function () {
-          if (filter === k) return; filter = k; paintPills(); paintGrid(true);
+        var p = ui.pill(k === 'all' ? N.t('liveAll') : k === 'fav' ? N.t('liveFav') : k === 'recent' ? N.t('liveRecent') : L.cat(rep[k]), function () {
+          if (filter === k) return; filter = k; N.store.set('live.filter', k); paintPills(); paintGrid(true);
         }, filter === k);
         p._k = k;
         p.onnav = function (dir, cur) {
@@ -276,7 +320,11 @@
     function show() {
       if (dead) return;
       msg.style.display = 'none';
-      buildPills(); paintGrid(true, restore && restore.idx);
+      buildPills();
+      var want = restore && restore.idx;
+      if (want === undefined) { var lk = N.store.get('live.last', ''); list = shown(); for (var i = 0; i < list.length; i++) if (key(list[i]) === lk) { want = i; break; } }
+      paintGrid(true, want);
+      if (params && params.playLast) { var lc = L.byKey(N.store.get('live.last', '')); if (lc) { var at = list.indexOf(lc); L.play(at >= 0 ? list : [lc], at >= 0 ? at : 0); } }
     }
     L.load(false).then(show).catch(function (e) {
       if (!dead) N.sc.errorView(root, e, function () { N.go('live', {}, { replace: true }); });
@@ -293,8 +341,10 @@
   };
 
   /* ================= live player ================= */
-  var V = { open: false, list: [], idx: 0, be: null, osdT: null, startT: null, numT: null, num: '', panel: false, sel: 0, dom: null, paused: false };
+  var V = { open: false, list: [], idx: 0, prev: -1, be: null, osdT: null, startT: null, numT: null, num: '', panel: false, sel: 0,
+    dom: null, paused: false, cats: [], cat: 0, plist: [], sleepAt: 0, sleepT: null };
   var hasAV = function () { return !!(window.webapis && window.webapis.avplay); };
+  var PRE_CH = [10190], RED = 403, GREEN = 404, SLEEP = [0, 30, 60, 90, 120];
 
   function build() {
     if (V.dom) return V.dom;
@@ -307,13 +357,17 @@
     d.name = el('div', 'lv-name'); d.osd.appendChild(d.name);
     d.meta = el('div', 'lv-meta'); d.osd.appendChild(d.meta);
     d.badge = el('div', 'lv-badge', N.t('liveBadge')); d.osd.appendChild(d.badge);
+    d.fav = el('div', 'lv-fav'); d.osd.appendChild(d.fav);
     d.clock = el('div', 'lv-clock tab'); d.osd.appendChild(d.clock);
+    d.sleep = el('div', 'lv-sleep tab'); d.osd.appendChild(d.sleep);
+    d.next = el('div', 'lv-next'); d.osd.appendChild(d.next);
+    d.keys = el('div', 'lv-keys'); d.osd.appendChild(d.keys);
     d.root.appendChild(d.osd);
     d.err = el('div', 'lv-err off'); d.root.appendChild(d.err);
     d.tries = el('div', 'lv-tries off'); d.root.appendChild(d.tries);
     d.entry = el('div', 'lv-entry tab off'); d.root.appendChild(d.entry);
-    d.panel = el('div', 'lv-panel off'); d.ph = el('div', 'lv-ph', N.t('liveList')); d.rows = el('div', 'lv-rows');
-    d.panel.appendChild(d.ph); d.panel.appendChild(d.rows); d.root.appendChild(d.panel);
+    d.panel = el('div', 'lv-panel off'); d.ph = el('div', 'lv-ph'); d.rows = el('div', 'lv-rows'); d.pk = el('div', 'lv-pk');
+    d.panel.appendChild(d.ph); d.panel.appendChild(d.rows); d.panel.appendChild(d.pk); d.root.appendChild(d.panel);
     document.body.appendChild(d.root);
     V.dom = d; return d;
   }
@@ -371,6 +425,7 @@
   }
 
   function clock() { var t = new Date(), h = t.getHours(), m = t.getMinutes(); return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m; }
+  function chAt(i) { var n = V.list.length; return n ? V.list[((i % n) + n) % n] : null; }
   function showOsd(ms) {
     var d = V.dom, ch = V.list[V.idx]; if (!ch) return;
     d.num.textContent = String(V.idx + 1);
@@ -378,9 +433,24 @@
     d.meta.innerHTML = ''; ui.dots(d.meta, L.meta(ch));
     if (ch.logo) { d.logo.style.display = ''; if (d.logo.getAttribute('src') !== ch.logo) d.logo.src = ch.logo; } else d.logo.style.display = 'none';
     d.logo.onerror = function () { d.logo.style.display = 'none'; };
+    d.fav.classList.toggle('on', L.isFav(ch));
     d.clock.textContent = clock();
+    var left = V.sleepAt ? Math.max(1, Math.round((V.sleepAt - Date.now()) / 60000)) : 0;
+    d.sleep.textContent = left ? N.tf('liveSleepLeft', { n: left }) : '';
+    // what is around: next / previous channel (Up / Down)
+    d.next.innerHTML = '';
+    if (V.list.length > 1) {
+      var up = el('div', 'nx'), dn = el('div', 'nx');
+      up.appendChild(el('b', '', '▲')); up.appendChild(ui.txt(el('span'), L.nm(chAt(V.idx + 1))));
+      dn.appendChild(el('b', '', '▼')); dn.appendChild(ui.txt(el('span'), L.nm(chAt(V.idx - 1))));
+      d.next.appendChild(up); d.next.appendChild(dn);
+    }
+    d.keys.innerHTML = '';
+    [['ok', N.t('liveKOk')], ['red', N.t(L.isFav(ch) ? 'liveKUnfav' : 'liveKFav')], ['green', N.t('liveKSleep')]].concat(V.prev >= 0 ? [['pre', N.t('liveKPrev')]] : []).forEach(function (k) {
+      var x = el('span', 'k'); x.appendChild(el('i', 'kk ' + k[0])); x.appendChild(el('span', '', k[1])); d.keys.appendChild(x);
+    });
     d.osd.classList.remove('off'); clearTimeout(V.osdT);
-    V.osdT = setTimeout(function () { if (!V.panel) d.osd.classList.add('off'); }, ms || 4000);
+    V.osdT = setTimeout(function () { if (!V.panel) d.osd.classList.add('off'); }, ms || 4500);
   }
   function showErr(ch, m) {
     var d = V.dom; d.spin.classList.remove('on'); d.err.innerHTML = ''; d.tries.classList.add('off');
@@ -392,10 +462,11 @@
     d.err.classList.remove('off');
     try { console.warn('live: ' + (ch && ch.en) + ' failed: ' + m); } catch (e) {}
   }
-  // what to try for a channel, in order: per stream (main, then alternates) the best way to play it
+  // what to try for a channel, in order: the stream that worked last time, then per stream (main, alternates) the best way to play it
   function attempts(ch) {
-    var urls = [ch.url].concat(ch.alts || []), out = [], seen = {};
+    var urls = [ch.url].concat(ch.alts || []), out = [], seen = {}, h = L.health(ch);
     function add(u, how) { var k = how + ' ' + u; if (u && !seen[k]) { seen[k] = 1; out.push({ url: u, how: how }); } }
+    if (h && h.u && (h.h !== 'av' || hasAV())) add(h.u, h.h);
     urls.forEach(function (u) {
       if (L.isTw(u)) {
         if (hasAV()) add(L.proxied(u), 'av');   // AVPlay only through the rewriting Worker (sequence number)
@@ -409,22 +480,25 @@
   }
   function tune(i) {
     var d = V.dom, n = V.list.length; if (!n) return;
-    i = ((i % n) + n) % n; V.idx = i; L.lastIdx = i; L.lastCh = V.list[i];
+    i = ((i % n) + n) % n;
+    if (V.list[V.idx] && i !== V.idx) V.prev = V.idx;
+    V.idx = i; L.lastIdx = i; L.lastCh = V.list[i];
     if (V.be) { V.be.stop(); V.be = null; }
     clearTimeout(V.startT); d.err.classList.add('off'); d.tries.classList.add('off'); d.spin.classList.add('on'); V.paused = false; d.root.classList.remove('paused');
-    var ch = V.list[i]; N.store.set('live.last', key(ch));
+    var ch = V.list[i]; N.store.set('live.last', key(ch)); L.noteRecent(ch);
     showOsd();
     var my = {}, list = attempts(ch), t = 0;
     V.cur = my;
     function next(m) {
       if (V.cur !== my) return;
       clearTimeout(V.startT); if (V.be) { V.be.stop(); V.be = null; }
-      if (t >= list.length) { showErr(ch, m); showOsd(8000); return; }
+      if (t >= list.length) { saveHealth(ch, { f: Date.now() }); showErr(ch, m); showOsd(8000); return; }
       var a = list[t++];
       if (t > 1) { d.tries.textContent = N.tf('liveTry', { n: t, m: list.length }); d.tries.classList.remove('off'); }
       d.spin.classList.add('on');
       V.be = backend(a.url, a.how, function () {
         if (V.cur !== my) return; clearTimeout(V.startT); d.spin.classList.remove('on'); d.tries.classList.add('off');
+        saveHealth(ch, { u: a.url, h: a.how, t: Date.now() });
         try { console.log('live: ' + ch.en + ' plays via ' + a.how + ' ' + a.url); } catch (e) {}
       }, function (e) { next(a.how + ': ' + e); });
       V.startT = setTimeout(function () { next(a.how + ': timeout'); }, TRY_MS);
@@ -432,20 +506,40 @@
     next('');
     if (V.panel) renderPanel();
   }
+
+  /* ---------- channel list panel (OK): categories with Left/Right, Red = favourite ---------- */
+  function catList() {
+    var all = L.channels || V.list, out = [{ k: 'cur', t: N.t('liveList'), l: V.list }], seen = {};
+    if (L.recent().length) out.push({ k: 'recent', t: N.t('liveRecent'), l: L.pick(L.recent()) });
+    if (L.favs().length) out.push({ k: 'fav', t: N.t('liveFav'), l: L.pick(L.favs()) });
+    out.push({ k: 'all', t: N.t('liveAll'), l: all });
+    all.forEach(function (c) { if (c.group !== 'undefined' && !seen[c.group]) { seen[c.group] = 1; out.push({ k: c.group, t: L.cat(c), l: all.filter(function (x) { return x.group === c.group; }) }); } });
+    return out;
+  }
   function renderPanel() {
-    var d = V.dom; d.rows.innerHTML = '';
-    var from = Math.max(0, Math.min(V.sel - 5, V.list.length - 11)), to = Math.min(V.list.length, from + 11);
+    var d = V.dom, c = V.cats[V.cat], pl = V.plist; d.rows.innerHTML = '';
+    d.ph.innerHTML = '';
+    d.ph.appendChild(el('b', 'ar', '‹')); d.ph.appendChild(ui.txt(el('span', 'pt'), c ? c.t : '')); d.ph.appendChild(el('b', 'ar', '›'));
+    d.ph.appendChild(el('small', 'pc', N.tf('liveChN', { n: N.fmt.num(pl.length) })));
+    var from = Math.max(0, Math.min(V.sel - 5, pl.length - 10)), to = Math.min(pl.length, from + 10), playing = V.list[V.idx];
     for (var i = from; i < to; i++) {
-      var ch = V.list[i], r = el('div', 'lv-row' + (i === V.sel ? ' sel' : '') + (i === V.idx ? ' cur' : ''));
+      var ch = pl[i], r = el('div', 'lv-row' + (i === V.sel ? ' sel' : '') + (ch === playing ? ' cur' : '') + (L.unstable(ch) ? ' down' : ''));
       r.appendChild(el('span', 'rn tab', String(i + 1)));
       if (ch.logo) { var im = el('img', 'rl'); im.alt = ''; im.onerror = function () { this.style.visibility = 'hidden'; }; im.src = ch.logo; r.appendChild(im); } else r.appendChild(el('span', 'rl'));
       r.appendChild(ui.txt(el('span', 'rt'), L.nm(ch)));
+      if (L.isFav(ch)) r.appendChild(el('i', 'rf'));
       d.rows.appendChild(r);
     }
+    if (!pl.length) d.rows.appendChild(el('div', 'lv-empty', N.t('liveNone')));
+    d.pk.textContent = N.t('livePanelKeys');
+  }
+  function setCat(i) {
+    V.cat = (i + V.cats.length) % V.cats.length; V.plist = V.cats[V.cat].l || [];
+    var playing = V.list[V.idx], at = V.plist.indexOf(playing); V.sel = at >= 0 ? at : 0; renderPanel();
   }
   function panel(on) {
     var d = V.dom; V.panel = on; d.panel.classList.toggle('off', !on);
-    if (on) { V.sel = V.idx; renderPanel(); showOsd(600000); } else showOsd();
+    if (on) { V.cats = catList(); setCat(0); showOsd(600000); } else showOsd();
   }
   function digit(n) {
     var d = V.dom; V.num = (V.num + n).slice(-3); d.entry.textContent = V.num; d.entry.classList.remove('off');
@@ -455,22 +549,43 @@
       if (x >= 1 && x <= V.list.length) tune(x - 1);
     }, 1500);
   }
+  function favToggle(ch) { if (!ch) return; L.toggleFav(ch); if (V.panel) renderPanel(); else showOsd(); }
+  function sleepCycle() {
+    var cur = V.sleepAt ? Math.round((V.sleepAt - Date.now()) / 60000) : 0, i = 0;
+    for (var k = 0; k < SLEEP.length; k++) if (SLEEP[k] > cur + 1) { i = k; break; }
+    if (cur && i === 0) i = 0; else if (!cur) i = 1;
+    var m = SLEEP[i]; clearTimeout(V.sleepT);
+    V.sleepAt = m ? Date.now() + m * 60000 : 0;
+    if (m) V.sleepT = setTimeout(function () { N.toast(N.t('liveSleepEnd'), 4000); L.close(); setTimeout(function () { N.exitApp(); }, 1500); }, m * 60000);
+    N.toast(m ? N.tf('liveSleepOn', { n: m }) : N.t('liveSleepOff'), 2000);
+    showOsd();
+  }
   function onKey(e) {
     if (!V.open) return false;
     var k = e.keyCode;
     if (k === K.BACK || k === K.ESC || k === K.BACKSPACE) { if (V.panel) panel(false); else L.close(); return true; }
     if (V.panel) {
       if (k === K.UP) { V.sel = Math.max(0, V.sel - 1); renderPanel(); }
-      else if (k === K.DOWN) { V.sel = Math.min(V.list.length - 1, V.sel + 1); renderPanel(); }
+      else if (k === K.DOWN) { V.sel = Math.min(V.plist.length - 1, V.sel + 1); renderPanel(); }
       else if (CH_UP.indexOf(k) >= 0) { V.sel = Math.max(0, V.sel - 10); renderPanel(); }
-      else if (CH_DOWN.indexOf(k) >= 0) { V.sel = Math.min(V.list.length - 1, V.sel + 10); renderPanel(); }
-      else if (k === K.ENTER) { panel(false); if (V.sel !== V.idx) tune(V.sel); }
-      else if (k === K.LEFT || k === K.RIGHT) panel(false);
+      else if (CH_DOWN.indexOf(k) >= 0) { V.sel = Math.min(V.plist.length - 1, V.sel + 10); renderPanel(); }
+      else if (k === K.LEFT || k === K.RIGHT) setCat(V.cat + ui.step(k === K.LEFT ? 'left' : 'right'));
+      else if (k === RED) favToggle(V.plist[V.sel]);
+      else if (k === K.ENTER && V.plist[V.sel]) {
+        var target = V.plist[V.sel], playing = V.list[V.idx]; panel(false);
+        if (V.plist !== V.list) {   // zapping now follows the chosen category
+          V.list = V.plist; var pi = V.list.indexOf(playing); V.prev = -1; V.idx = pi >= 0 ? pi : V.list.indexOf(target);
+        }
+        if (target !== playing || !V.be) tune(V.list.indexOf(target));
+      }
       return true;
     }
     if (k === K.UP || CH_UP.indexOf(k) >= 0) tune(V.idx + 1);
     else if (k === K.DOWN || CH_DOWN.indexOf(k) >= 0) tune(V.idx - 1);
+    else if (PRE_CH.indexOf(k) >= 0 || (k === K.LEFT && V.prev >= 0)) { if (V.prev >= 0 && V.prev < V.list.length) tune(V.prev); }
     else if (k === K.ENTER) panel(true);
+    else if (k === RED) favToggle(V.list[V.idx]);
+    else if (k === GREEN) sleepCycle();
     else if (k >= 48 && k <= 57) digit(String(k - 48));
     else if (k >= 96 && k <= 105) digit(String(k - 96));
     else if (k === K.PLAY || k === K.PAUSE || k === K.PLAYPAUSE) {
@@ -485,17 +600,24 @@
   }
   L.play = function (list, idx) {
     if (!list || !list.length) return;
-    build(); V.list = list; V.open = true; V.panel = false;
+    build(); V.list = list; V.open = true; V.panel = false; V.prev = -1;
     var d = V.dom; d.root.classList.remove('hidden'); d.panel.classList.add('off'); d.entry.classList.add('off');
     document.body.classList.add('playing', 'live-on');
     N.nav.pushHandler(onKey);
     tune(idx || 0);
   };
+  // the last channel (start option "last channel", Home row)
+  L.playLast = function () {
+    return L.load(false).then(function () {
+      var c = L.byKey(N.store.get('live.last', '')) || (L.channels || [])[0]; if (!c) return;
+      var l = L.channels || [c]; L.play(l, Math.max(0, l.indexOf(c)));
+    });
+  };
   L.close = function () {
     if (!V.open) return;
     V.open = false; clearTimeout(V.startT); clearTimeout(V.osdT); clearTimeout(V.numT); V.cur = null;
     if (V.be) { V.be.stop(); V.be = null; }
-    var d = V.dom; d.root.classList.add('hidden'); d.osd.classList.add('off'); d.err.classList.add('off'); d.spin.classList.remove('on');
+    var d = V.dom; d.root.classList.add('hidden'); d.osd.classList.add('off'); d.err.classList.add('off'); d.spin.classList.remove('on'); d.tries.classList.add('off');
     document.body.classList.remove('playing', 'live-on');
     N.nav.popHandler(onKey);
     if (N.onPlayerClosed) N.onPlayerClosed();

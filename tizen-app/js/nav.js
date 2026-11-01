@@ -6,7 +6,7 @@
   nav.registerKeys = function () {
     try {
       if (window.tizen && tizen.tvinputdevice) {
-        ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF1Green', 'ChannelUp', 'ChannelDown', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].forEach(function (n) {
+        ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF1Green', 'ChannelUp', 'ChannelDown', 'PreviousChannel', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].forEach(function (n) {
           try { tizen.tvinputdevice.registerKey(n); } catch (e) {}
         });
       }

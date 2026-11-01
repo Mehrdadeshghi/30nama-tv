@@ -100,6 +100,13 @@
         function () { return N.store.get('quality', 'max'); }, function (v) { N.store.set('quality', v); });
       list(N.t('audioCh'), [{ v: 'default', label: N.t('chAuto') }, { v: '6ch', label: N.t('ch6') }, { v: '2ch', label: N.t('ch2') }],
         function () { return N.store.get('audioCh', 'default'); }, function (v) { N.store.set('audioCh', v); });
+      if (N.live) {
+        group(N.t('live'));
+        list(N.t('liveStart'), [{ v: 'home', label: N.t('liveStartHome') }, { v: 'live', label: N.t('liveStartLive') }, { v: 'last', label: N.t('liveStartLast') }],
+          function () { return N.store.get('startScreen', 'home'); }, function (v) { N.store.set('startScreen', v); });
+        toggle(N.t('liveHomeRow'), function () { return N.store.get('liveHome', true); }, function (v) { N.store.set('liveHome', v); });
+        action(N.t('liveRefresh'), function () { N.live.load(true).then(function () { N.toast(N.t('liveRefreshed')); }, function (e) { N.toast(N.t('error')); }); });
+      }
       group(N.t('display'));
       list(N.t('language'), [{ v: 'fa', label: 'فارسی' }, { v: 'en', label: 'English' }], function () { return N.lang; }, function (v) {
         if (v === N.lang) return;

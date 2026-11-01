@@ -1,6 +1,6 @@
 {
   "name": "30nama-tv",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Unofficial 30nama client for Samsung Tizen TV (TizenBrew app module).",
   "packageType": "app",
   "appName": "30nama",
@@ -25,7 +25,8 @@
     "6",
     "7",
     "8",
-    "9"
+    "9",
+    "PreviousChannel"
   ],
   "keywords": [
     "tizenbrew",

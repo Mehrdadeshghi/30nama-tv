@@ -256,7 +256,10 @@
       }
       return p;
     }).then(function () {
-      N.go(N.isLoggedIn() ? 'home' : 'login', {}, { reset: true }); // login is mandatory (single-owner app)
+      if (!N.isLoggedIn()) { N.go('login', {}, { reset: true }); return; } // login is mandatory (single-owner app)
+      var st = N.live ? N.store.get('startScreen', 'home') : 'home';   // fork: start in Live TV / on the last channel
+      if (st === 'live' || st === 'last') N.go('live', st === 'last' ? { playLast: 1 } : {}, { reset: true });
+      else N.go('home', {}, { reset: true });
     }).catch(bootError);
   }
 

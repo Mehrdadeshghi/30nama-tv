@@ -58,6 +58,18 @@ Requires [Tizen Studio](https://developer.tizen.org/development/tizen-studio/dow
 ./build.sh <security-profile> [<tv-ip>:26101]    # manual build; with a target it also installs and launches
 ```
 
+## Live TV (fork addition)
+
+Sidebar entry "پخش زنده": Iranian and Persian-language channels from the community list
+[shayanline/iptv-iran](https://github.com/shayanline/iptv-iran) (iptv-org as fallback), with alternate streams tried
+automatically and the stream that worked remembered per channel.
+
+- Home row with recently watched and favourite channels; Settings > Live TV: start on Home, Live TV or the last channel
+- Player: Up/Down or CH+/CH- zap, PRE-CH / Left = previous channel, digits = channel number, OK = channel list with
+  categories (Left/Right), Red = favourite, Green = sleep timer (30/60/90/120 min)
+- IRIB channels (Telewebion) need the small Cloudflare Worker in `tools/telewebion-worker/` on Samsung TVs, because AVPlay
+  cannot read Telewebion's 16-digit media sequence. Put its address in `liveProxy` in `tizen-app/js/config.js`.
+
 ## LG webOS (fork addition)
 
 The same app also runs on LG TVs (webOS). `webos/build.sh` packages `tizen-app/` with an `appinfo.json` and a small
