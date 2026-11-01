@@ -19,7 +19,7 @@ N.config = {
   // Sent to the API as c-version-number. Matches the official WEBTV client (30nama.tv), whose key we use. Not the app's own version.
   apiVersion: '1.2.0',
   // App version (Settings). Set from the git tag by the release workflow via tools/set-version.js, with config.xml and package.json.
-  appVersion: '1.0.6',
+  appVersion: '1.0.7',
   // TMDB v4 "API Read Access Token" (Bearer). Keep empty here; js/tmdb-token.js or localStorage 'tmdbToken' overrides. Empty = TMDB features off.
   tmdbToken: '',
   qrBase: 'https://30nama.com/auth/',

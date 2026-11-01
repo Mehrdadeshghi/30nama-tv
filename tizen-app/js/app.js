@@ -5,13 +5,14 @@
   // [key, icon, go, y (panel-relative)]; 'watchlist' only when logged in
   var RAIL = [
     ['search', 'search', function () { N.go('search', {}, { reset: true }); }, 240],
-    ['home', 'home', function () { N.go('home', {}, { reset: true }); }, 320],
-    ['progress', 'progress', function () { N.go('progress', {}, { reset: true }); }, 400], // In progress (screens/progress.js)
-    ['movies', 'movies', function () { N.go('archive', { slug: 'movies', nameKey: 'movies' }, { reset: true }); }, 480],
-    ['series', 'series', function () { N.go('archive', { slug: 'series', nameKey: 'series' }, { reset: true }); }, 560],
-    ['anime', 'anime', function () { N.go('archive', { slug: 'anime', nameKey: 'anime' }, { reset: true }); }, 640],
-    ['archive', 'archive', function () { N.go('archive', {}, { reset: true }); }, 720],
-    ['watchlist', 'list', function () { N.go('archive', { list: 'watchlist', nameKey: 'watchlist' }, { reset: true }); }, 800],
+    ['home', 'home', function () { N.go('home', {}, { reset: true }); }, 312],
+    ['live', 'live', function () { N.go('live', {}, { reset: true }); }, 384], // Live TV (screens/live.js, fork addition)
+    ['progress', 'progress', function () { N.go('progress', {}, { reset: true }); }, 456], // In progress (screens/progress.js)
+    ['movies', 'movies', function () { N.go('archive', { slug: 'movies', nameKey: 'movies' }, { reset: true }); }, 528],
+    ['series', 'series', function () { N.go('archive', { slug: 'series', nameKey: 'series' }, { reset: true }); }, 600],
+    ['anime', 'anime', function () { N.go('archive', { slug: 'anime', nameKey: 'anime' }, { reset: true }); }, 672],
+    ['archive', 'archive', function () { N.go('archive', {}, { reset: true }); }, 744],
+    ['watchlist', 'list', function () { N.go('archive', { list: 'watchlist', nameKey: 'watchlist' }, { reset: true }); }, 816],
     ['settings', 'settings', function () { N.go('settings', {}, { reset: true }); }, 912]
   ];
   var PROF = ['prof', '', function () { N.go('settings', { section: 'account' }, { reset: true }); }, 120];
@@ -218,6 +219,7 @@
   N.onSessionExpired = function () {
     if (!current) return; // during boot: boot() routes to login itself
     if (N.player.open) N.player.close();
+    if (N.live && N.live.isOpen && N.live.isOpen()) N.live.close();
     N.closeModal();
     N.toast(N.t('sessionExpired'), 5000);
     resetLists();
