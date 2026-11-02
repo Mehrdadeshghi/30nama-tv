@@ -22,7 +22,7 @@
       var cw = logged ? N.api.get('continue_watching').catch(function () { return null; }) : Promise.resolve(null);
       var tmOn = N.tmdb.enabled(), tmH = Promise.resolve([]);
       if (tmOn) { root.classList.add('tm'); N.tmdb.startHome(); tmH = N.tmdb.heroes(6, 3200).catch(function () { return []; }); }
-      Promise.all([N.getHome(), cw, tmH]).then(function (res) { if (!dead) build(res[0], N.cwHidden.filter(extractPosts(res[1])), res[2], !!res[1]); }) // locally dismissed ids stay hidden (screens/progress.js)
+      Promise.all([N.getHome(), cw, tmH]).then(function (res) { if (!dead) build(res[0], N.cwHidden.filter(logged ? N.resume.mergeCw(extractPosts(res[1])) : []), res[2], !!res[1]); }) // locally dismissed ids stay hidden (screens/progress.js)
         .catch(function (e) { if (dead) return; N.splashReady(); errorView(root, e, function () { root.innerHTML = ''; sk = skeletonHome(root); load(); }); });
     }
 

@@ -10,10 +10,12 @@
   N.addStrings({
     en: { subStyle: 'Appearance', subLook: 'Subtitle appearance', ssColor: 'Color', ssSize: 'Size', ssBg: 'Background', ssPos: 'Position', ssWeight: 'Font weight',
       cWhite: 'White', cYellow: 'Yellow', cCyan: 'Cyan', cGreen: 'Green', cMagenta: 'Magenta', xlarge: 'Extra large',
-      bgShadow: 'Drop shadow', bgOutline: 'Outline', bgBox: 'Translucent box', bgSolid: 'Solid box', posLow: 'Low', posNormal: 'Normal', posHigh: 'High', wRegular: 'Regular', wBold: 'Bold' },
+      bgShadow: 'Drop shadow', bgOutline: 'Outline', bgBox: 'Translucent box', bgSolid: 'Solid box', posLow: 'Low', posNormal: 'Normal', posHigh: 'High', wRegular: 'Regular', wBold: 'Bold',
+      cwSyncFail: 'Progress could not be sent to 30nama ({m}). It is still saved on this TV.' },
     fa: { subStyle: 'ظاهر', subLook: 'ظاهر زیرنویس', ssColor: 'رنگ', ssSize: 'اندازه', ssBg: 'پس‌زمینه', ssPos: 'جایگاه', ssWeight: 'ضخامت قلم',
       cWhite: 'سفید', cYellow: 'زرد', cCyan: 'فیروزه‌ای', cGreen: 'سبز', cMagenta: 'سرخابی', xlarge: 'خیلی بزرگ',
-      bgShadow: 'سایه', bgOutline: 'دورخط', bgBox: 'کادر نیمه‌شفاف', bgSolid: 'کادر تیره', posLow: 'پایین', posNormal: 'معمولی', posHigh: 'بالا', wRegular: 'معمولی', wBold: 'ضخیم' }
+      bgShadow: 'سایه', bgOutline: 'دورخط', bgBox: 'کادر نیمه‌شفاف', bgSolid: 'کادر تیره', posLow: 'پایین', posNormal: 'معمولی', posHigh: 'بالا', wRegular: 'معمولی', wBold: 'ضخیم',
+      cwSyncFail: 'ادامه تماشا به سی‌نما ارسال نشد ({m}). روی همین تلویزیون ذخیره شده است.' }
   });
 
   /* ---------- subtitle appearance: one table for the player popover and Settings > Subtitle appearance ---------- */
@@ -298,6 +300,8 @@
   var SCRUB_W = 1740, glyphT = null, unState = null, el = N.el;
   P.spin = function (on) { $('player-spin').classList.toggle('hidden', !on); };
   P.start = function (post, items, index, resume) {
+    try { if (N.resume) N.resume.notePost(post); } catch (e) {}
+    P.obsFail = 0; P.obsWarned = false; P.lsT = 0;
     P.post = post; P.items = items; P.noResume = resume === false; P.resume = resume || null; P.open = true; P.qSel = null; P.chSel = null; P.ctl = -1;
     $('player').classList.remove('hidden');
     P.subPrev = null; SS.apply();
@@ -390,18 +394,63 @@
   P.onEnded = function () { if (P.index + 1 < P.items.length) P.playIndex(P.index + 1); else P.close(); };
 
   /* ---------- progress reporting (observer) ---------- */
+  // AmbiSync-Fork: Benutzer-ID für observer. Je nach Login-Weg liegt sie in session.user, session.user.user oder fehlt
+  // (nur Token gespeichert). Ohne ID verwirft der Server die Meldung still, also notfalls einmal `user` fragen.
+  function findUid(u, depth) {
+    if (!u || typeof u !== 'object' || depth > 3) return '';
+    if (u.user_id) return String(u.user_id);
+    var ks = ['user', 'result', 'data', 'profile'];
+    for (var i = 0; i < ks.length; i++) { var r = findUid(u[ks[i]], depth + 1); if (r) return r; }
+    return '';
+  }
+  var uidP = null;
+  function getUid() {
+    var id = findUid(N.session && N.session.user, 0) || ((N.session && N.session.user && N.session.user.id) ? String(N.session.user.id) : '');
+    if (id) return Promise.resolve(id);
+    var tok = (N.session && N.session.token) || '', c = N.store.get('uid', null);
+    if (c && c.tok === tok && c.id) return Promise.resolve(c.id);
+    if (!uidP) uidP = N.api.call('user', {}).then(function (j) {
+      var got = findUid(j && j.result, 0);
+      if (got) N.store.set('uid', { tok: tok, id: got });
+      uidP = null; return got;
+    }, function () { uidP = null; return ''; });
+    return uidP;
+  }
+  P.getUid = getUid;
+  // lokal speichern (billig, oft) – getrennt von der Server-Meldung
+  function saveLocal() {
+    if (!P.be || P.loading || P.seekAcc) return;
+    var item0 = P.items[P.index], info0 = (item0 && item0.info) || {};
+    try { if (N.resume) N.resume.save(P.post && P.post.id, info0, P.be.time(), P.be.duration()); } catch (e) {}
+    P.lsT = Date.now();
+  }
+  P.saveLocal = saveLocal;
   P.report = function () {
     if (!P.be) return;
-    var item0 = P.items[P.index], info0 = (item0 && item0.info) || {};
-    try { if (N.resume && !P.loading) N.resume.save(P.post && P.post.id, info0, P.be.time(), P.be.duration()); } catch (e) {}
-    if (!N.isLoggedIn()) return;
-    var item = P.items[P.index], info = item.info || {}, u = N.session.user || {};
-    N.api.call('observer', {
-      post_id: info.post_id || (P.post && P.post.id), file_id: info.file_id,
-      user_id: u.user_id || u.id || '', time: Math.floor(P.be.time()), duration: Math.floor(P.be.duration()),
-      token: (item.options && item.options.token) || ''
-    }).catch(function () {});
+    saveLocal();
+    if (!N.isLoggedIn() || P.loading) return;
+    var item = P.items[P.index], info = item.info || {};
+    var t = Math.floor(P.be.time()), d = Math.floor(P.be.duration());
+    if (!(t > 0)) return;
+    var pid = info.post_id || (P.post && P.post.id), fid = info.file_id, tok = (item.options && item.options.token) || '';
+    getUid().then(function (uid) {
+      return N.api.call('observer', { post_id: pid, file_id: fid, user_id: uid, time: t, duration: d, token: tok });
+    }).then(function (j) {
+      var ok = !!(j && j.success);
+      N.store.set('obsLast', { ok: ok, st: j && j.status, m: String((j && j.msg) || ''), t: t, ts: Date.now() });
+      if (ok) { P.obsFail = 0; return; }
+      obsFailed(String((j && j.msg) || (j && j.status) || '?'));
+    }, function (e) {
+      N.store.set('obsLast', { ok: false, m: String((e && e.message) || e), t: t, ts: Date.now() });
+      obsFailed(String((e && e.message) || 'network'));
+    });
   };
+  // zweimal hintereinander abgelehnt: einmal pro Wiedergabe Bescheid geben (die Position bleibt lokal gespeichert)
+  function obsFailed(m) {
+    P.obsFail = (P.obsFail || 0) + 1;
+    try { console.warn('observer failed', m); } catch (e) {}
+    if (P.obsFail >= 2 && !P.obsWarned && P.open) { P.obsWarned = true; N.toast(N.tf('cwSyncFail', { m: m.slice(0, 40) }), 6000); }
+  }
   P.reportNow = function () { if (P.be && P.be.time() > 1) P.report(); };
 
   /* ---------- scrubber / OSD ---------- */
@@ -426,6 +475,7 @@
   function tn(v) { if (typeof v === 'string' && v.indexOf(':') > 0) { var p = v.split(':'), r = 0; for (var i = 0; i < p.length; i++) r = r * 60 + (parseFloat(p[i]) || 0); return r; } return Number(v); }
   P.tick = function () {
     if (!P.be) return;
+    if (Date.now() - (P.lsT || 0) > 5000 && !P.paused) saveLocal();
     var t = P.be.time(), d = P.be.duration(), tt = t;
     renderSub(t);
     if (P.seekAcc && d) tt = Math.max(0, Math.min(d, t + P.seekAcc));
@@ -485,7 +535,7 @@
   P.togglePause = function (quiet) {
     if (!P.be) return;
     P.paused = !P.paused;
-    if (P.paused) P.be.pause(); else P.be.play();
+    if (P.paused) { P.be.pause(); P.reportNow(); } else P.be.play();
     $('player').classList.toggle('paused', P.paused);
     syncPP();
     if (!quiet) P.glyph(P.paused ? 'pause' : 'play');

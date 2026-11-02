@@ -250,7 +250,7 @@
         p = N.api.call('user', {}).then(function (j) {
           if (j && j.success && j.result) {
             var u = j.result.user_session ? j.result : (j.result.user || null);
-            if (u && u.user_session) N.setSession(u); else { N.session.user = Object.assign({}, N.session.user, j.result); N.store.set('session', N.session); }
+            if (u && u.user_session) N.setSession(u); else { N.session.user = Object.assign({}, N.session.user, (j.result.user && typeof j.result.user === 'object') ? j.result.user : j.result); N.store.set('session', N.session); }
           }
         }).catch(function () {});
       }

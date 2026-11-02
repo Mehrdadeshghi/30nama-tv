@@ -70,6 +70,7 @@
   N.cwDismiss = function (p) {
     N.api.call('continue_watching_dismiss', { id: p.id }).then(function (j) { if (!j || !j.success) N.toast(N.t('error')); }).catch(function () { N.toast(N.t('error')); });
     N.cwHidden.add(p); delete N.cwData[p.id]; N.dropHome();
+    if (N.resume) N.resume.clearPost(p.id); // sonst holt die lokale Position den Titel wieder zurück
   };
   // context menu for a CW card: remove, watchlist toggle, more info. o: {removeKey, remove(), info(), wl(on)}
   N.cwMenu = function (p, o) {
@@ -164,7 +165,7 @@
     function load() {
       N.api.get('continue_watching').then(function (r) {
         if (dead) return;
-        var all = sc.extractPosts(r);
+        var all = N.resume.mergeCw(sc.extractPosts(r)); // AmbiSync-Fork: auf dem Fernseher geschaute Positionen zuerst
         for (var k in N.cwData) if (N.cwData.hasOwnProperty(k)) delete N.cwData[k]; // fresh list (as Home does)
         all.forEach(function (p) { N.cwData[p.id] = p.data || {}; });
         show(N.cwHidden.filter(all)); // API order = most recent first

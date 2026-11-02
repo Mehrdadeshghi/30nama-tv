@@ -75,10 +75,13 @@
       function localResume() {
         var loc = N.resume && N.resume.latestFor(post.id); if (!loc) return null;
         var li = -1;
-        items.forEach(function (it, i) { var f = it.info || {}; if ((+f.season || 0) === loc.season && (+f.episode || 0) === loc.episode) li = i; });
+        items.forEach(function (it, i) { var f = it.info || {}; if ((+f.season || 0) === loc.season && N.resume.epNo(f) === loc.episode) li = i; });
         if (li < 0) return null;
-        var f0 = items[li].info || {};
-        if (resume && String(resume.file_id) === String(f0.file_id) && (+resume.time || 0) > loc.time + 60) return null;
+        var f0 = items[li].info || {}, srv = null;
+        if (resume) items.forEach(function (it) { var f = it.info || {}; if (String(f.file_id) === String(resume.file_id)) srv = { season: +f.season || 0, episode: N.resume.epNo(f), time: +resume.time || 0 }; });
+        if (srv && N.resume.serverWins(srv, loc)) return null;
+        // Folge zu Ende geschaut: die nächste anbieten (von vorn); beim Film bleibt es beim normalen "Abspielen"
+        if (loc.done) return li + 1 < items.length && isSeries ? { i: li + 1, r: null } : { i: 0, r: null, none: true };
         return { i: li, r: { file_id: f0.file_id, time: loc.time, duration: loc.duration, local: true } };
       }
       var lr = localResume();
@@ -129,7 +132,7 @@
       function captionParts() {
         var rparts = [], i0 = (items[startIdx] && items[startIdx].info) || {};
         if (resume && items.length) { if (isSeries) rparts.push(N.fmt.ep(i0.season || 1, i0.episode || startIdx + 1)); if (ri.left) rparts.push(N.tf('minLeftN', { n: ri.left })); }
-        else if (isSeries && items.length) { var f0 = items[0].info || {}; rparts.push(N.fmt.ep(f0.season || 1, f0.episode || 1)); }
+        else if (isSeries && items.length) { var f0 = (items[startIdx] && items[startIdx].info) || {}; rparts.push(N.fmt.ep(f0.season || 1, f0.episode || startIdx + 1)); }
         return rparts;
       }
       var rparts = captionParts(), capEl = null;
@@ -389,11 +392,12 @@
         try {
           var nr = localResume();
           if (nr && items.length) {
-            resume = nr.r; startIdx = nr.i; ri = resumeInfo();
-            var lab = playB.querySelector('span'); if (lab) lab.textContent = N.t('resume');
+            resume = nr.r; startIdx = nr.i; ri = resume ? resumeInfo() : { left: 0, frac: 0 };
+            var lab = playB.querySelector('span'); if (lab) lab.textContent = N.t(resume ? 'resume' : 'play');
             var ob = playB.querySelector('.bar'); if (ob) playB.removeChild(ob);
             if (ri.frac > 0) { var nb = el('div', 'bar'), ni = el('i'); ni.style.transform = 'scaleX(' + Math.min(1, ri.frac) + ')'; nb.appendChild(ni); playB.appendChild(nb); }
-            if (!rsB) { rsB = ui.circle('restart', function () { play(startIdx, false); }); btns.insertBefore(rsB, playB.nextSibling); }
+            if (resume && !rsB) { rsB = ui.circle('restart', function () { play(startIdx, false); }); rsB.onfocus2 = heroFocus; btns.insertBefore(rsB, playB.nextSibling); }
+            else if (!resume && rsB) { if (N.nav.cur === rsB || lastFocus === rsB) lastFocus = playB; btns.removeChild(rsB); rsB = null; }
             var np = captionParts(), nc = np.length ? ui.dots(el('div', 'd-resume'), np) : null;
             if (capEl && nc) col.replaceChild(nc, capEl); else if (capEl) col.removeChild(capEl); else if (nc) col.insertBefore(nc, plotEl);
             capEl = nc;

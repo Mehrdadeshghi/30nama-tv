@@ -1,6 +1,6 @@
 {
   "name": "30nama-tv",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Unofficial 30nama client for Samsung Tizen TV (TizenBrew app module).",
   "packageType": "app",
   "appName": "30nama",
