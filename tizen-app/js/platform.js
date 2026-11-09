@@ -125,6 +125,14 @@
 
   /* Drop-in for fetch(N.proxied(url), opts). opts may also carry timeout (ms) and prio (0 urgent .. 2 background). */
   N.fetch = function (url, opts) {
+    // Android-TV-Hülle (nama30-tv): fetch() ist dort durch die native Brücke ersetzt (kein CORS); nur mit Zeitlimit
+    if (window.AndroidBridge && /^https?:/i.test(url)) {
+      var o = opts || {}, ms = o.timeout || 15000;
+      return new Promise(function (res, rej) {
+        var t = setTimeout(function () { rej(new Error('timeout')); }, ms);
+        window.fetch(url, o).then(function (r) { clearTimeout(t); res(r); }, function (e) { clearTimeout(t); rej(e); });
+      });
+    }
     if (N.platform !== 'webos' || !window.PalmServiceBridge || !/^https?:/i.test(url)) return xhr(url, opts);
     var h = hostOf(url);
     if (useSvc[h]) return viaService(url, opts);
