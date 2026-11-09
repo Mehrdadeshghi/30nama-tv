@@ -114,7 +114,8 @@
       else if (d.kind === 'top') { c = ui.card(p, 'top', { rank: i + 1 }); w = i + 1 >= 10 ? 440 : 360; }
       else { c = ui.card(p, 'poster'); w = 250; }
       c.onfocus2 = function () { onCardFocus(defs.indexOf(d), r.cs.indexOf(c)); };
-      c.onclick = function () { goDetails(p, false); };
+      // Continue Watching: OK plays on at the saved spot (or the next episode); other rows open the details page
+      c.onclick = function () { goDetails(p, !!c._cw); };
       if (logged) c._lp = function () { openCardMenu(r, c, p); };
       if (logged && c._cw) c.onred = c._lp; // Red opens the CW menu (as on the In progress screen); elsewhere Red stays Search
       r.tr.appendChild(c); r.cs.push(c); r.ws.push(w);

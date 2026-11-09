@@ -11,11 +11,11 @@
     en: { subStyle: 'Appearance', subLook: 'Subtitle appearance', ssColor: 'Color', ssSize: 'Size', ssBg: 'Background', ssPos: 'Position', ssWeight: 'Font weight',
       cWhite: 'White', cYellow: 'Yellow', cCyan: 'Cyan', cGreen: 'Green', cMagenta: 'Magenta', xlarge: 'Extra large',
       bgShadow: 'Drop shadow', bgOutline: 'Outline', bgBox: 'Translucent box', bgSolid: 'Solid box', posLow: 'Low', posNormal: 'Normal', posHigh: 'High', wRegular: 'Regular', wBold: 'Bold',
-      cwSyncFail: 'Progress could not be sent to 30nama ({m}). It is still saved on this TV.' },
+      cwSyncFail: 'Progress could not be sent to 30nama ({m}). It is still saved on this TV.', errRetryHint: 'OK: try again   ·   Back: close' },
     fa: { subStyle: 'ظاهر', subLook: 'ظاهر زیرنویس', ssColor: 'رنگ', ssSize: 'اندازه', ssBg: 'پس‌زمینه', ssPos: 'جایگاه', ssWeight: 'ضخامت قلم',
       cWhite: 'سفید', cYellow: 'زرد', cCyan: 'فیروزه‌ای', cGreen: 'سبز', cMagenta: 'سرخابی', xlarge: 'خیلی بزرگ',
       bgShadow: 'سایه', bgOutline: 'دورخط', bgBox: 'کادر نیمه‌شفاف', bgSolid: 'کادر تیره', posLow: 'پایین', posNormal: 'معمولی', posHigh: 'بالا', wRegular: 'معمولی', wBold: 'ضخیم',
-      cwSyncFail: 'ادامه تماشا به سی‌نما ارسال نشد ({m}). روی همین تلویزیون ذخیره شده است.' }
+      cwSyncFail: 'ادامه تماشا به سی‌نما ارسال نشد ({m}). روی همین تلویزیون ذخیره شده است.', errRetryHint: 'OK: تلاش دوباره   ·   بازگشت: بستن' }
   });
 
   /* ---------- subtitle appearance: one table for the player popover and Settings > Subtitle appearance ---------- */
@@ -58,11 +58,13 @@
 
   /* ---------- backends ---------- */
   function avBackend() {
-    var av = webapis.avplay, state = { dur: 0, cur: 0, url: null };
+    // rep/repN: positions the player itself reported since the last seek (a seek callback alone proves nothing:
+    // some TVs answer "success" and still play from 0)
+    var av = webapis.avplay, state = { dur: 0, cur: 0, url: null, rep: 0, repN: 0 };
     var be = {
       name: 'avplay',
       load: function (url, startSec, cb) {
-        state.url = url;
+        state.url = url; state.repN = 0;
         $('avplayObj').style.display = 'block';
         document.body.classList.add('av'); document.documentElement.classList.add('avh');
         try { av.close(); } catch (e) {}
@@ -72,7 +74,7 @@
         av.setListener({
           onbufferingstart: function () { P.spin(true); },
           onbufferingcomplete: function () { P.spin(false); },
-          oncurrentplaytime: function (ms) { state.cur = ms / 1000; },
+          oncurrentplaytime: function (ms) { state.cur = ms / 1000; state.rep = state.cur; state.repN++; },
           onstreamcompleted: function () { P.onEnded(); },
           onevent: function () {},
           onerror: function (err) { P.onError(String(err)); },
@@ -80,15 +82,22 @@
         });
         av.prepareAsync(function () {
           try { state.dur = av.getDuration() / 1000; } catch (e) {}
-          if (startSec > 5) { try { av.seekTo(Math.floor(startSec * 1000)); state.cur = startSec; } catch (e) {} }
-          av.play();
+          // AmbiSync-Fork: first play, then seek and wait for the answer. A seek before play() is ignored by some
+          // TVs for HLS; the old code then claimed the start position anyway and later saved 0:30 over it.
+          try { av.play(); } catch (e) {}
+          if (startSec > 5) {
+            try {
+              av.seekTo(Math.floor(startSec * 1000), function () { state.cur = startSec; }, function () { try { console.warn('avplay seek failed'); } catch (x) {} });
+            } catch (e) { try { av.seekTo(Math.floor(startSec * 1000)); } catch (e2) {} }
+          }
           P.spin(false);
           if (cb) cb();
         }, function (err) { P.onError(String(err)); });
       },
       play: function () { try { av.play(); } catch (e) {} },
       pause: function () { try { av.pause(); } catch (e) {} },
-      seek: function (sec) { try { state.cur = sec; av.seekTo(Math.max(0, Math.floor(sec * 1000))); } catch (e) {} },
+      confirmedTime: function () { return state.repN >= 2 ? state.rep : -1; },
+      seek: function (sec) { state.repN = 0; try { av.seekTo(Math.max(0, Math.floor(sec * 1000)), function () { state.cur = sec; }, function () {}); } catch (e) { try { av.seekTo(Math.max(0, Math.floor(sec * 1000))); state.cur = sec; } catch (e2) {} } },
       time: function () { return state.cur; },
       buffered: function () { return 0; },
       duration: function () { return state.dur; },
@@ -144,7 +153,10 @@
         var src = N.proxied(url);
         if (window.Hls && Hls.isSupported()) {
           // startPosition: hls.js lädt direkt ab der Fortsetzen-Stelle (currentTime vor dem Laden wird ignoriert)
-          hls = new Hls({ enableWorker: false, abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1 }); // open near 1080p instead of 240p
+          // worker: segment parsing off the UI thread (otherwise 4K streams make the remote lag); bounded buffers for TV memory
+          hls = new Hls({ enableWorker: true, abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1,
+            backBufferLength: 30, maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 60 * 1000 * 1000,
+            manifestLoadingTimeOut: 15000, levelLoadingTimeOut: 15000, fragLoadingTimeOut: 30000 }); // open near 1080p instead of 240p
           hls.on(Hls.Events.ERROR, function (ev, d) {
             if (!d || !d.fatal) return;
             // webOS: hls.js loads over XHR and needs CORS on the CDN. If that is refused before playback starts, let
@@ -162,6 +174,7 @@
       pause: function () { v.pause(); },
       seek: function (s) { v.currentTime = Math.max(0, s); },
       time: function () { return v.currentTime || 0; },
+      confirmedTime: function () { return !v.seeking && v.readyState >= 2 && !v.paused ? (v.currentTime || 0) : -1; },
       buffered: function () { try { var b = v.buffered, t = v.currentTime || 0; for (var i = 0; i < b.length; i++) if (b.start(i) <= t + 0.5 && b.end(i) >= t) return b.end(i); } catch (e) {} return 0; },
       duration: function () { return isFinite(v.duration) ? v.duration : 0; },
       audioTracks: function () {
@@ -333,14 +346,17 @@
     if (typeof m3u8 === 'string') m3u8 = m3u8.replace(/^\s+|\s+$/g, '');
     if (!m3u8 || typeof m3u8 !== 'string') { try { console.warn('no playable m3u8', item.file && item.file.m3u8); } catch (e) {} N.toast(N.t('noStream'), 4000); return P.close(); }
     setOsdText(item, i); buildBtns(item);
-    var start = 0, info = item.info || {};
-    if (P.resume && String(P.resume.file_id) === String(info.file_id)) start = Number(P.resume.time) || 0;
-    // AmbiSync-Fork: lokal gemerkte Position (pro Film/Folge, unabhängig von Qualität und Datei-ID).
-    // Sie gewinnt, außer der Server ist mehr als 60 s weiter (dann wurde woanders weitergeschaut).
-    if (!P.noResume && !P.reloading) {
+    var start = 0, info = item.info || {}, given = false;
+    // the details page already decided where to continue (N.resume.resolve): use exactly that, never decide again here
+    if (P.resume && String(P.resume.file_id) === String(info.file_id)) { start = Number(P.resume.time) || 0; given = true; }
+    // an episode picked without a decision (episode tile, next episode): its own saved spot on this TV
+    if (!given && !P.noResume && !P.reloading) {
       var loc = N.resume && N.resume.get(P.post && P.post.id, info);
-      if (loc && !(start > loc.t + 60)) start = loc.t;
+      if (loc) start = loc.t;
     }
+    // until playback has really reached the start spot nothing is saved (a failed seek must not overwrite it)
+    P.startAt = start; P.startOk = !(start > 5); P.reseeked = false; P.playT0 = 0; P.stallT0 = 0;
+    hideErr();
     P.noResume = false; P.reloading = false;
     P.resume = null;
     var cv = N.ui.coverUrl(P.post) || N.ui.posterUrl(P.post), pp = $('player-poster');
@@ -372,7 +388,7 @@
     P.ctl = -1; dropFocus();
     P.open = false; $('player').classList.add('hidden'); document.body.classList.remove('playing');
     $('player').classList.remove('osd-on', 'paused', 'panel', 'loading', 'seeking'); $('scrub').classList.remove('seeking', 'nudge'); P.seekAcc = 0; $('osd').classList.add('off');
-    P.subPrev = null; subText('');
+    P.subPrev = null; subText(''); hideErr();
     N.nav.popHandler(P.onKey);
     if (N.onPlayerClosed) N.onPlayerClosed();
   };
@@ -390,8 +406,35 @@
     if (/timeout|network/i.test(m)) return 'errNet';
     return 'playErr';
   }
-  P.onError = function (m) { try { console.warn('player error', m); } catch (e) {} P.loading = false; clearTimeout(P.loadT); $('player').classList.remove('loading'); N.toast(N.t(errKey(m)), 6000); P.spin(false); P.showOsd(); };
-  P.onEnded = function () { if (P.index + 1 < P.items.length) P.playIndex(P.index + 1); else P.close(); };
+  // error: a box with the reason and "OK = try again" (at the same spot) / "Back = close" instead of a dead player
+  P.onError = function (m) {
+    try { console.warn('player error', m); } catch (e) {} if (N.diag) N.diag('player: ' + m);
+    P.loading = false; clearTimeout(P.loadT); $('player').classList.remove('loading'); P.spin(false);
+    showErr(N.t(errKey(m)));
+  };
+  function errBox() {
+    var b = $('player-err');
+    if (!b) { b = el('div', ''); b.id = 'player-err'; b.appendChild(el('div', 'pe-m')); b.appendChild(el('div', 'pe-h')); $('player').appendChild(b); }
+    return b;
+  }
+  function showErr(msg) {
+    var b = errBox(); P.err = true;
+    b.querySelector('.pe-m').textContent = msg;
+    b.querySelector('.pe-h').textContent = N.t('errRetryHint');
+    b.classList.add('show'); P.showOsd();
+  }
+  function hideErr() { P.err = false; var b = $('player-err'); if (b) b.classList.remove('show'); }
+  P.retry = function () {
+    if (!P.open) return;
+    var it = P.items[P.index], t = P.be ? P.be.time() : 0;
+    if (!(t > 5) && P.startAt > 5) t = P.startAt;
+    P.resume = { file_id: ((it && it.info) || {}).file_id, time: t };
+    hideErr(); P.playIndex(P.index);
+  };
+  // end of an episode: the next one only with "autoplay" on (Settings), otherwise back to the page
+  P.onEnded = function () {
+    if (P.index + 1 < P.items.length && N.store.get('autoplay', true)) P.playIndex(P.index + 1); else P.close();
+  };
 
   /* ---------- progress reporting (observer) ---------- */
   // AmbiSync-Fork: Benutzer-ID für observer. Je nach Login-Weg liegt sie in session.user, session.user.user oder fehlt
@@ -419,7 +462,7 @@
   P.getUid = getUid;
   // lokal speichern (billig, oft) – getrennt von der Server-Meldung
   function saveLocal() {
-    if (!P.be || P.loading || P.seekAcc) return;
+    if (!P.be || P.loading || P.seekAcc || !P.startOk || P.err) return;
     var item0 = P.items[P.index], info0 = (item0 && item0.info) || {};
     try { if (N.resume) N.resume.save(P.post && P.post.id, info0, P.be.time(), P.be.duration()); } catch (e) {}
     P.lsT = Date.now();
@@ -428,7 +471,7 @@
   P.report = function () {
     if (!P.be) return;
     saveLocal();
-    if (!N.isLoggedIn() || P.loading) return;
+    if (!N.isLoggedIn() || P.loading || !P.startOk || P.err) return;
     var item = P.items[P.index], info = item.info || {};
     var t = Math.floor(P.be.time()), d = Math.floor(P.be.duration());
     if (!(t > 0)) return;
@@ -475,7 +518,20 @@
   function tn(v) { if (typeof v === 'string' && v.indexOf(':') > 0) { var p = v.split(':'), r = 0; for (var i = 0; i < p.length; i++) r = r * 60 + (parseFloat(p[i]) || 0); return r; } return Number(v); }
   P.tick = function () {
     if (!P.be) return;
-    if (Date.now() - (P.lsT || 0) > 5000 && !P.paused) saveLocal();
+    var now = Date.now();
+    // resume check: once playing, the position must be near the start spot; else seek once more, then accept
+    if (!P.startOk && !P.loading && !P.paused) {
+      if (!P.playT0) P.playT0 = now;
+      var tc = P.be.confirmedTime ? P.be.confirmedTime() : P.be.time();
+      if (tc >= 0 && tc >= P.startAt - 15) P.startOk = true;
+      else if (!P.reseeked && now - P.playT0 > 2500) { P.reseeked = true; P.playT0 = now; try { P.be.seek(P.startAt); } catch (e) {} }
+      else if (P.reseeked && now - P.playT0 > 6000) { P.startOk = true; if (N.diag) N.diag('resume seek failed, at ' + Math.round(tc) + ' of ' + Math.round(P.startAt)); }
+    }
+    // stall watchdog: buffering for 30 s while playing = error with retry (instead of a spinner forever)
+    var spinning = !$('player-spin').classList.contains('hidden');
+    if (spinning && !P.loading && !P.paused && !P.err) { if (!P.stallT0) P.stallT0 = now; else if (now - P.stallT0 > 30000) { P.stallT0 = 0; P.onError('stall timeout'); } }
+    else P.stallT0 = 0;
+    if (now - (P.lsT || 0) > 5000 && !P.paused) saveLocal();
     var t = P.be.time(), d = P.be.duration(), tt = t;
     renderSub(t);
     if (P.seekAcc && d) tt = Math.max(0, Math.min(d, t + P.seekAcc));
@@ -776,9 +832,10 @@
       var frac = P.be && P.be.duration() ? P.be.time() / P.be.duration() : 0;
       P.items.forEach(function (it, i) {
         if (String((it.info && it.info.season) || 1) !== season) return;
-        var t = ui.epCard(it, i, P.post, { progress: i === P.index ? frac : 0 });
+        var ep = N.resume && N.resume.forEpisode(P.post && P.post.id, it.info || {});
+        var t = ui.epCard(it, i, P.post, { progress: i === P.index ? frac : (ep ? ep.frac : 0), done: i !== P.index && !!(ep && ep.done) });
         t.onclick = function () { closePanel(); P.playIndex(i); };
-        t.onfocus2 = function () { ui.slideTo(tr, ui.keepX(tr, t, 404, 1)); };
+        t.onfocus2 = function () { ui.slideTo(tr, ui.keepX(tr, t, 404, 1)); var j = tiles.indexOf(t); for (var q = Math.max(0, j - 6); q < Math.min(tiles.length, j + 9); q++) ui.load(tiles[q]); };
         t.onnav = function (dir) {
           if (dir === 'up') return tabEl(P.curTab);
           if (dir === 'down') return true;
@@ -790,7 +847,9 @@
       body.appendChild(tr);
       ui.layoutTrack(tr, tiles, tiles.map(function () { return 404; }), 40, 50, 1790);
       if (P.curTile) ui.slideTo(tr, ui.keepX(tr, P.curTile, 404, 1));
-      tiles.forEach(function (t) { ui.load(t); });
+      // only the covers around the current episode (an anime season can have hundreds of tiles)
+      var ci = Math.max(0, tiles.indexOf(P.curTile));
+      tiles.forEach(function (t, j) { if (Math.abs(j - ci) <= 8) ui.load(t); });
     } else {
       var po = el('img', 'pi-po'), src = ui.posterUrl(P.post), tx = el('div', 'pi-tx');
       po.alt = ''; if (src) po.src = src;
@@ -834,6 +893,7 @@
   P.onKey = function (e) {
     if (!P.open) return false;
     var k = e.keyCode, back = k === K.BACK || k === K.ESC || k === K.BACKSPACE, vis = osdVisible();
+    if (P.err) { if (k === K.ENTER || k === K.PLAY || k === K.PLAYPAUSE) P.retry(); else if (back || k === K.STOP) P.close(); return true; }
     if (P.popOpen) { if (back) { if (P.popSub) popBack(); else closePop(); return true; } return mediaKey(k); } // spatial nav runs inside the popover scope
     if (P.panelOpen) { if (back) { closePanel(); return true; } return mediaKey(k); }
     if (P.ctl >= 0) { // controls row focused; other keys (media, FF/RW) fall through

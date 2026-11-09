@@ -62,32 +62,47 @@
       var items = (st && st.hls ? st.hls.slice() : []);
       items.sort(function (a, b) {
         var ai = a.info || {}, bi = b.info || {};
-        return ((+ai.season || 0) - (+bi.season || 0)) || ((+ai.episode || 0) - (+bi.episode || 0));
+        return ((+ai.season || 0) - (+bi.season || 0)) || (N.resume.epNo(ai) - N.resume.epNo(bi));
       });
-      var resume = st && st.continue_watching && st.continue_watching.file_id ? st.continue_watching : null;
       var po = post.options || {}, isSeries = !!po.is_series, info = post.info || {}, air = post.air || {}, nextD = nextDay(air.next_episode_date);
       var tmOn = N.tmdb.enabled(), dpage = el('div', 'd-page'), col = el('div', 'det-col'), dsecs = el('div', 'd-secs');
       if (tmOn) root.classList.add('tm');
-      var startIdx = 0;
-      if (resume) items.forEach(function (it, i) { if (it.info && String(it.info.file_id) === String(resume.file_id)) startIdx = i; });
-      // AmbiSync-Fork: auf dem Fernseher gemerkte Position (siehe js/resume.js). Sie gewinnt, außer der Server
-      // kennt dieselbe Folge mit einer mehr als 60 s späteren Zeit.
-      function localResume() {
-        var loc = N.resume && N.resume.latestFor(post.id); if (!loc) return null;
-        var li = -1;
-        items.forEach(function (it, i) { var f = it.info || {}; if ((+f.season || 0) === loc.season && N.resume.epNo(f) === loc.episode) li = i; });
-        if (li < 0) return null;
-        var f0 = items[li].info || {}, srv = null;
-        if (resume) items.forEach(function (it) { var f = it.info || {}; if (String(f.file_id) === String(resume.file_id)) srv = { season: +f.season || 0, episode: N.resume.epNo(f), time: +resume.time || 0 }; });
-        if (srv && N.resume.serverWins(srv, loc)) return null;
-        // Folge zu Ende geschaut: die nächste anbieten (von vorn); beim Film bleibt es beim normalen "Abspielen"
-        if (loc.done) return li + 1 < items.length && isSeries ? { i: li + 1, r: null } : { i: 0, r: null, none: true };
-        return { i: li, r: { file_id: f0.file_id, time: loc.time, duration: loc.duration, local: true } };
+      // Where to continue: ONE decision (N.resume.resolve) from the server's state and what this TV saved, the same
+      // rule the Continue Watching row uses - so the card, this page and the player always agree.
+      function srvState() {
+        var cw = st && st.continue_watching;
+        if (cw && cw.file_id) {
+          for (var k = 0; k < items.length; k++) {
+            var f = items[k].info || {};
+            if (String(f.file_id) === String(cw.file_id)) return { season: +f.season || 0, episode: N.resume.epNo(f), time: +cw.time || 0, progress: cw.progress };
+          }
+        }
+        var cd = N.cwData[post.id];
+        if (cd && !cd._local) return { season: +cd.season || 0, episode: +cd.episode || 0, time: +cd.time || 0, progress: cd.progress };
+        return null;
       }
-      var lr = localResume();
-      if (lr) { resume = lr.r; startIdx = lr.i; }
+      function idxOf(season, ep) {
+        if (!isSeries) return items.length ? 0 : -1;
+        for (var k = 0; k < items.length; k++) { var f = items[k].info || {}; if ((+f.season || 0) === season && N.resume.epNo(f) === ep) return k; }
+        return -1;
+      }
+      // -> {i: item index, r: {file_id, time, duration} | null}
+      function decide() {
+        var r = N.resume.resolve(post.id, srvState()); if (!r || !items.length) return { i: 0, r: null };
+        var li = idxOf(r.season, r.episode);
+        if (li < 0) return { i: 0, r: null };
+        if (r.done) return isSeries && li + 1 < items.length ? { i: li + 1, r: null } : { i: 0, r: null };
+        if (!(r.time > 5)) return { i: li, r: null };
+        return { i: li, r: { file_id: (items[li].info || {}).file_id, time: r.time, duration: r.duration } };
+      }
+      var dc = decide(), resume = dc.r, startIdx = dc.i;
       // withResume=false: bewusst von vorn (auch die lokale Position wird dann ignoriert)
-      function play(i, withResume) { lastFocus = N.nav.cur; N.player.start(post, items, i, withResume ? (i === startIdx ? resume : null) : false); }
+      // withResume=false: from the start (the saved spot of that episode is cleared, so nothing jumps back later)
+      function play(i, withResume) {
+        lastFocus = N.nav.cur;
+        if (!withResume) try { N.resume.clear(post.id, (items[i] && items[i].info) || {}); } catch (e) {}
+        N.player.start(post, items, i, withResume ? (i === startIdx ? resume : null) : false);
+      }
       function resumeInfo() {
         var t = +(resume && resume.time) || 0, d = +(resume && resume.duration) || 0;
         if (!d) { var cd = N.cwData[post.id], pr = cd && parseFloat(cd.progress); if (pr > 0 && +cd.time) d = cd.time * 100 / pr; else if (!isSeries && info.time && info.time.default) d = info.time.default * 60; }
@@ -197,8 +212,10 @@
       function buildSeason(s) {
         track.innerHTML = ''; var tiles = [], at = -1;
         map[s].forEach(function (idx) {
-          var it = items[idx], isRes = resume && it.info && String(it.info.file_id) === String(resume.file_id);
-          var t = ui.epCard(it, idx, post, { progress: isRes ? ri.frac : 0 }), ti = tiles.length;
+          var it = items[idx], ep = N.resume.forEpisode(post.id, it.info || {});
+          var isRes = resume && it.info && String(it.info.file_id) === String(resume.file_id);
+          // every episode shows its own state from this TV: watched (check) or a progress bar
+          var t = ui.epCard(it, idx, post, { progress: ep ? ep.frac : (isRes ? ri.frac : 0), done: !!(ep && ep.done) }), ti = tiles.length;
           t.onclick = function () { play(idx, true); };
           t.onfocus2 = function () { epMem[curS] = ti; epsE.mem = ti; ui.slideTo(track, ui.keepX(track, t, 404, 1.1)); loadNear(tiles, ti); focusSection(epsE); };
           if (idx === startIdx) at = ti;
@@ -388,11 +405,11 @@
       }
       if (tmOn) N.tmdb.details(post).then(function (d) { if (!dead && d) paintTmdb(d); }).catch(function () {});
       current.onPlayerClosed = function () {
-        // AmbiSync-Fork: sonst kennt die Seite noch die alte Position und "Abspielen" startet wieder bei 0
+        // the page must show the new position at once, otherwise "Resume" starts at the old spot
         try {
-          var nr = localResume();
-          if (nr && items.length) {
-            resume = nr.r; startIdx = nr.i; ri = resume ? resumeInfo() : { left: 0, frac: 0 };
+          var nd = decide();
+          resume = nd.r; startIdx = nd.i; ri = resume ? resumeInfo() : { left: 0, frac: 0 };
+          if (items.length) {
             var lab = playB.querySelector('span'); if (lab) lab.textContent = N.t(resume ? 'resume' : 'play');
             var ob = playB.querySelector('.bar'); if (ob) playB.removeChild(ob);
             if (ri.frac > 0) { var nb = el('div', 'bar'), ni = el('i'); ni.style.transform = 'scaleX(' + Math.min(1, ri.frac) + ')'; nb.appendChild(ni); playB.appendChild(nb); }
@@ -401,8 +418,14 @@
             var np = captionParts(), nc = np.length ? ui.dots(el('div', 'd-resume'), np) : null;
             if (capEl && nc) col.replaceChild(nc, capEl); else if (capEl) col.removeChild(capEl); else if (nc) col.insertBefore(nc, plotEl);
             capEl = nc;
+            // episode tiles: new progress / watched marks; keep focus on the same tile
+            if (tabsE && curS !== null) {
+              var hadEp = lastFocus ? epsE.cs.indexOf(lastFocus) : -1;
+              buildSeason(curS);
+              if (hadEp >= 0 && epsE.cs[hadEp]) lastFocus = epsE.cs[hadEp];
+            }
           }
-        } catch (e) {}
+        } catch (e) { N.diag('details refresh: ' + e.message); }
         var t = lastFocus && lastFocus.offsetWidth > 0 ? lastFocus : playB; N.nav.focus(t, true);
       };
       N.nav.focus(playB, true);

@@ -31,3 +31,4 @@ design/shots/
 # official client packages used for API reference (never commit)
 *.deb
 *.apk
+e2e-fail-*.png

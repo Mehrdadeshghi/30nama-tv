@@ -124,6 +124,10 @@ html[dir=rtl] .card .prog i{transform-origin:right}
 .k-ep .grad{position:absolute;left:0;top:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,.7),rgba(0,0,0,0) 55%)}
 .k-ep .en{position:absolute;bottom:16px;inset-inline-start:20px;font-size:57px;font-weight:700;line-height:1.1;color:rgba(255,255,255,.92)}
 .k-ep .prog{height:5px;border-radius:3px}
+/* watched episode: check badge, tile slightly dimmer */
+.k-ep .watched-m{position:absolute;top:14px;inset-inline-end:14px;width:44px;height:44px;border-radius:22px;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
+.k-ep .watched-m .ico{width:28px;height:28px;stroke:#fff;stroke-width:2.6;fill:none}
+.k-ep.is-watched .dim{background:rgba(0,0,0,.55)}
 .k-ep .ce{font-size:23px;line-height:34px;font-weight:600;color:var(--label-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .k-ep .ce .dot-s{margin:0 8px}
 .k-ep .ct:empty{display:none}
@@ -195,3 +199,4 @@ html[dir=rtl] .logo{object-position:right bottom}
 .k-p.focus .ct,.k-grid.focus .ct{text-shadow:0 2px 8px rgba(0,0,0,.9)}
 /* Reihe mit Fokus: die anderen Cover etwas dunkler, damit das ausgewählte heraussticht */
 .has-focus>.card:not(.focus) .art,.has-focus>.gcell>.card:not(.focus) .art{filter:brightness(.62)}
+.modal .mb{white-space:pre-line;max-height:620px;overflow:hidden}

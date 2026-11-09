@@ -19,7 +19,8 @@
   if (N.config.liveProxy === undefined) N.config.liveProxy = '';
   var CACHE_MS = 6 * 3600 * 1000, CACHE_KEY = 'live.cache2';
   var CH_UP = [427, 33], CH_DOWN = [428, 34];     // Samsung ChannelUp/Down, LG PageUp/PageDown
-  var MAX_TRIES = 5, TRY_MS = 12000;
+  // a dead channel gives up after ~30 s instead of 60 s (4 attempts x 8 s); working streams start within ~3 s
+  var MAX_TRIES = 4, TRY_MS = 8000;
 
   N.addStrings({
     en: {
@@ -123,7 +124,7 @@
     return all;
   }
   function get(u) {
-    return N.fetch(u).then(function (r) { if (!r.ok) throw new Error('m3u ' + r.status); return r.text(); }).then(parseM3U);
+    return N.fetch(u, { timeout: 25000 }).then(function (r) { if (!r.ok) throw new Error('m3u ' + r.status); return r.text(); }).then(parseM3U);
   }
   // Instant from the stored list (any age); a list older than CACHE_MS is refreshed in the background for next time.
   L.load = function (force) {

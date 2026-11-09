@@ -5,8 +5,8 @@
   var errorView = sc.errorView, instant = sc.instant;
 
   N.addStrings({
-    en: { progress: 'In Progress', removeProg: 'Remove from In Progress', progEmpty: 'Nothing in progress', progEmptySub: 'Movies and series you start watching will appear here.', goHome: 'Go to Home', seeAll: 'See all', options: 'Options', progN: '{n} titles', progN1: '{n} title' },
-    fa: { progress: 'در حال تماشا', removeProg: 'حذف از در حال تماشا', progEmpty: 'چیزی در حال تماشا نیست', progEmptySub: 'فیلم‌ها و سریال‌هایی که شروع به تماشا کنید اینجا نمایش داده می‌شوند.', goHome: 'رفتن به خانه', seeAll: 'مشاهده همه', options: 'گزینه‌ها', progN: '{n} عنوان', progN1: '{n} عنوان' }
+    en: { offlineList: 'Shown from this TV: 30nama could not be reached.', progress: 'In Progress', removeProg: 'Remove from In Progress', progEmpty: 'Nothing in progress', progEmptySub: 'Movies and series you start watching will appear here.', goHome: 'Go to Home', seeAll: 'See all', options: 'Options', progN: '{n} titles', progN1: '{n} title' },
+    fa: { offlineList: 'از حافظه همین تلویزیون: سی‌نما در دسترس نبود.', progress: 'در حال تماشا', removeProg: 'حذف از در حال تماشا', progEmpty: 'چیزی در حال تماشا نیست', progEmptySub: 'فیلم‌ها و سریال‌هایی که شروع به تماشا کنید اینجا نمایش داده می‌شوند.', goHome: 'رفتن به خانه', seeAll: 'مشاهده همه', options: 'گزینه‌ها', progN: '{n} عنوان', progN1: '{n} عنوان' }
   });
 
   // rail icon (a 3/4 ring around a play glyph), added to the index.html sprite so N.ui.icon('progress') works
@@ -28,7 +28,8 @@
       if (N.lang === 'fa') { parts.push(N.t('season') + ' ' + dd.season); parts.push(N.tf('epN', { n: dd.episode })); }
       else parts.push(N.fmt.ep(dd.season, dd.episode));
     }
-    if (left) parts.push(N.tf('minLeftN', { n: left })); else if (pr >= 95) parts.push(N.t('watched'));
+    if (dd.next) parts.push(N.t('nextEpisode'));   // vorige Folge zu Ende geschaut (js/resume.js mergeCw)
+    else if (left) parts.push(N.tf('minLeftN', { n: left })); else if (pr >= 95) parts.push(N.t('watched'));
     return { prog: left ? pr / 100 : 0, label: parts.join(' · '), parts: parts };
   };
   // k-cw card: cover art, white progress hairline, caption title + "S/E · X min left"
@@ -37,30 +38,30 @@
     if (n.prog > 0) { var pb = el('div', 'prog'), pi = el('i'); pi.style.transform = 'scaleX(' + n.prog.toFixed(3) + ')'; pb.appendChild(pi); c._art.insertBefore(pb, c._art.lastChild); }
     c._cw = true; return c;
   };
-  // continue_watching_dismiss lags server-side (the item can come back for minutes): remember dismissed ids locally for 24h as
-  // {id: {t: ms, s: sig}}, sig = season/episode/time at dismissal. A post whose sig has moved on (watched again) is un-hidden.
-  // Old entries ({id: ms}) carry no sig and match on id alone.
+  // continue_watching_dismiss lags server-side (the item can come back for minutes or hours): remember dismissed ids locally
+  // for 24 h as {id: {t: ms}}. A title only shows again when it is watched on this TV after the dismissal (local progress
+  // newer than t). Before, a signature of the server data decided, and the server's changing `time` brought titles back.
   var HKEY = 'cwHidden', TTL = 864e5;
-  function sig(p) { var d = (p && p.data) || N.cwData[p && p.id] || {}; return [d.season || '', d.episode || '', +d.time || 0].join('|'); }
   function hRead() {
     var m = N.store.get(HKEY, null), now = Date.now(), out = {}, drop = false, v, t;
     if (!m || typeof m !== 'object') return out;
     for (var k in m) if (m.hasOwnProperty(k)) {
       v = m[k]; t = v && typeof v === 'object' ? +v.t || 0 : +v || 0;
-      if (now - t < TTL) out[k] = v && typeof v === 'object' ? v : { t: t }; else drop = true;
+      if (now - t < TTL) out[k] = { t: t }; else drop = true;
     }
     if (drop) N.store.set(HKEY, out);
     return out;
   }
+  function watchedSince(id, t) { var l = N.resume && N.resume.latestFor(id); return !!(l && l.ts > t + 1000); }
   N.cwHidden = {
-    add: function (p) { var m = hRead(); m[String(p.id)] = { t: Date.now(), s: sig(p) }; N.store.set(HKEY, m); },
-    has: function (id) { return !!hRead()[String(id)]; },
+    add: function (p) { var m = hRead(); m[String(p.id)] = { t: Date.now() }; N.store.set(HKEY, m); },
+    has: function (id) { var h = hRead()[String(id)]; return !!h && !watchedSince(id, h.t); },
     filter: function (posts) {
       var m = hRead(), drop = false, out = (posts || []).filter(function (p) {
         var h = p && m[String(p.id)];
         if (!h) return !!p;
-        if (h.s == null || h.s === sig(p)) return false;
-        delete m[String(p.id)]; drop = true; return true; // progress changed since the dismiss: show it again, forget the entry
+        if (!watchedSince(p.id, h.t)) return false;
+        delete m[String(p.id)]; drop = true; return true;   // watched again here since the dismissal: show it again
       });
       if (drop) N.store.set(HKEY, m);
       return out;
@@ -114,14 +115,16 @@
       N.lists.toggle('watchlist', p.id).then(function (on) { delete wlBusy[p.id]; N.toast(N.t(on ? 'addedToList' : 'removedFromList')); })
         .catch(function () { delete wlBusy[p.id]; N.toast(N.t('error')); });
     }
-    function goDetails(p) { N.go('details', { id: p.id }); } // same as Home's CW row: Details resumes from the stream + N.cwData
+    function goDetails(p) { N.go('details', { id: p.id }); }
+    // OK on a card continues playback straight away (Netflix-style); the menu (long OK / Red) still offers More info
+    function resumePlay(p) { N.go('details', { id: p.id, autoplay: 1 }); }
 
     function show(list) {
       grid.innerHTML = ''; posts = list; cells = []; cards = [];
       list.forEach(function (p) {
         var cell = el('div', 'pcell'), c = N.cwCard(p);
         cell.appendChild(c); c._cell = cell;
-        c.onclick = function () { if (!c._gone) goDetails(p); };
+        c.onclick = function () { if (!c._gone) resumePlay(p); };
         c._lp = function () { openMenu(c, p); };
         c.onred = c._lp;
         grid.appendChild(cell); cells.push(cell); cards.push(c); ui.load(c); // ~12 items, all at once
@@ -169,7 +172,13 @@
         for (var k in N.cwData) if (N.cwData.hasOwnProperty(k)) delete N.cwData[k]; // fresh list (as Home does)
         all.forEach(function (p) { N.cwData[p.id] = p.data || {}; });
         show(N.cwHidden.filter(all)); // API order = most recent first
-      }).catch(function (e) { if (!dead) errorView(root, e, function () { N.go('progress', params, { replace: true }); }); });
+      }).catch(function (e) {
+        if (dead) return;
+        // server unreachable: show what this TV knows instead of an error page
+        var loc = N.cwHidden.filter(N.resume.mergeCw([]));
+        if (loc.length) { loc.forEach(function (p) { N.cwData[p.id] = p.data || {}; }); show(loc); N.toast(N.t('offlineList'), 4000); return; }
+        errorView(root, e, function () { N.go('progress', params, { replace: true }); });
+      });
     }
     load();
     return {

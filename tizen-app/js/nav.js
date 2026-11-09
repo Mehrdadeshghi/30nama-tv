@@ -64,7 +64,9 @@
 
   nav.move = function (dir) {
     var cur = nav.cur;
-    if (!cur || !visible(cur) || !root().contains(cur)) { nav.focusFirst(); return; }
+    // nothing focused (screen still loading, element removed): take the first visible target; if the screen has
+    // none at all, hand over to nav.onEmpty (the app opens the sidebar) - the remote must never go dead
+    if (!cur || !visible(cur) || !root().contains(cur)) { if (!nav.focusFirst() && nav.onEmpty) nav.onEmpty(dir); return; }
     var n = cur;
     while (n && n !== document.body) {
       if (n.onnav) { var r0 = n.onnav(dir, cur); if (r0) { if (r0.nodeType) nav.focus(r0); return true; } }
@@ -121,7 +123,7 @@
       e.preventDefault(); if (N.onBack) N.onBack(); return;
     }
     if (isInput()) {
-      if (k === K.IME_DONE || k === K.ENTER) { if (nav.cur && nav.cur.onenter) nav.cur.onenter(); e.preventDefault(); return; }
+      if (k === K.IME_DONE || k === K.ENTER || k === K.IME_CANCEL) { if (nav.cur && nav.cur.onenter) nav.cur.onenter(); e.preventDefault(); return; }
       if (k === K.LEFT || k === K.RIGHT) return; // caret movement
     }
     if (k === K.LEFT) { e.preventDefault(); nav.move('left'); }
@@ -130,7 +132,10 @@
     else if (k === K.DOWN) { e.preventDefault(); nav.move('down'); }
     else if (k === K.ENTER) {
       e.preventDefault();
-      if (nav.cur) { if (nav.cur.onenter) nav.cur.onenter(); else nav.cur.click(); }
+      var c = nav.cur;
+      if (c && (!visible(c) || !root().contains(c))) c = null;
+      if (c) { if (c.onenter) c.onenter(); else c.click(); }
+      else if (!nav.focusFirst() && nav.onEmpty) nav.onEmpty('enter');
     }
   });
   // mouse support for desktop testing (only on real pointer movement, so content sliding under a still cursor never steals focus)

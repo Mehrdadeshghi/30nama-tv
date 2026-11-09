@@ -57,7 +57,7 @@
       gs.appendChild(el('div', 'sec-h', N.t('genres'))); gs.appendChild(grid); box.appendChild(gs);
       (m.genres || []).forEach(function (g, i) {
         var c = ui.card({ id: g.id, title: { english: g.name } }, 'tile', { image: imgUrl(g.image), name: g.name });
-        c.onclick = function () { N.go('archive', { slug: g.slug, name: g.name }); };
+        c.onclick = function () { N.go('browse', { genre: g.slug, name: g.name }); };   // genre page with all filters
         c.onfocus2 = function () { for (var k = Math.max(0, i - 8); k < Math.min(gens.length, i + 9); k++) ui.load(gens[k]); };
         c.onnav = gridNav(gens, i, 4, function () { return cats[cMem] || cats[0] || true; });
         if (i < 4) c._row = gs;
@@ -76,9 +76,10 @@
     };
   };
 
-  var SORTS = [['date', 'newest'], ['favorite', 'popular'], ['update', 'updated']];
+  // orderby values the API knows (advanced_search / archive): 'date' was not one of them (silently = relevant)
+  var SORTS = [['update', 'newest'], ['favorite', 'popular'], ['imdb-rate', 'sortImdb'], ['year', 'sortYear']];
   function archiveList(root, params, restore) {
-    var dead = false, page = 1, pages = 1, loading = false, total = 0, cells = [], cards = [], skels = [], sort = (restore && restore.sort) || 'date', wantIdx = restore && restore.idx || 0, restoring = !!(restore && restore.idx > 0), gen = 0, COLS = 6;
+    var dead = false, page = 1, pages = 1, loading = false, total = 0, cells = [], cards = [], skels = [], sort = (restore && restore.sort) || 'update', wantIdx = restore && restore.idx || 0, restoring = !!(restore && restore.idx > 0), gen = 0, COLS = 6;
     var isList = !!params.list;
     root.classList.add('archive', 'gridpage'); N.stage.neutral(true);
     var box = el('div', 'arch'); root.appendChild(box);
@@ -106,7 +107,7 @@
     }
     function fetchPage() {
       if (isList) return N.lists.listPosts(params.list, page);
-      return N.api.get('archive', { slugs: params.slug, streamonly: 'true', page: page, orderby: sort, order: 'desc' }).then(function (r) {
+      return N.api.get('archive', { slugs: params.slug, streamonly: 'true', page: page, orderby: sort, order: 'DESC' }).then(function (r) {
         return { posts: sc.extractPosts(r), total: r && r.total, pages: r && r.pages };
       });
     }
@@ -115,11 +116,13 @@
       m.onnav = function (dir) { if ((dir === 'left' || dir === 'right') && ui.step(dir) < 0) N.rail.enter(); return true; };
       N.nav.focus(m, true);
     }
+    // `page` = the page to fetch next; it only moves on after that page arrived (a failed page is fetched again)
+    function more() { if (!loading && page <= pages) load(); }
     function load() {
       if (loading) return; loading = true; var my = gen; addSkels(page === 1 ? 12 : 6);
       fetchPage().then(function (r) {
         if (dead || my !== gen) return;
-        loading = false; clearSkels();
+        loading = false; clearSkels(); page++;
         var first = cells.length === 0;
         total = r.total || total; pages = r.pages || 1;
         if (total) cnt.textContent = N.tf('titlesN', { n: N.fmt.num(total) });
@@ -128,8 +131,11 @@
           c.onclick = function () { N.go('details', { id: p.id }); };
           c.onfocus2 = function () {
             var row = Math.floor(idx / COLS), rows = Math.ceil(cells.length / COLS);
-            for (var k = Math.max(0, (row - 1) * COLS); k < Math.min(cells.length, (row + 3) * COLS); k++) ui.load(cards[k]);
-            if (row >= rows - 2 && page < pages) { page++; load(); }
+            for (var k = 0; k < cards.length; k++) {   // posters near the view load, far ones are released (TV memory)
+              var rr = Math.floor(k / COLS);
+              if (rr >= row - 1 && rr <= row + 3) ui.load(cards[k]); else if (rr < row - 6 || rr > row + 8) ui.unload(cards[k]);
+            }
+            if (row >= rows - 2) more();
           };
           c.onnav = gridNav(cards, idx, COLS, isList ? null : curSort);
           cells.push(cell); cards.push(c); grid.appendChild(cell);
@@ -139,9 +145,14 @@
         if (first && !restoring) N.nav.focus(cards[0], true);
         if (restoring) {
           if (wantIdx < cells.length) { restoring = false; instant(root, function () { N.nav.focus(cards[wantIdx], true); box.reveal(cards[wantIdx]); }); }
-          else if (page < pages) { page++; load(); } else { restoring = false; N.nav.focus(cards[0], true); }
+          else if (page <= pages) load(); else { restoring = false; N.nav.focus(cards[0], true); }
         }
-      }).catch(function (e) { if (!dead && my === gen) { loading = false; clearSkels(); if (!cells.length) errorView(root, e, function () { N.go('archive', params, { replace: true }); }); } });
+      }).catch(function (e) {
+        if (dead || my !== gen) return;
+        loading = false; clearSkels();
+        if (!cells.length) errorView(root, e, function () { N.go('archive', params, { replace: true }); });
+        else N.toast(N.t('error'), 2500);   // the next move near the end tries this page again
+      });
     }
     load();
     return {

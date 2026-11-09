@@ -124,3 +124,9 @@ html[dir=rtl] .pp-track{left:auto;right:0}
 body.av,body.av #player,body.av #app{background:transparent}
 body.av #video{display:none}
 html.avh,html.avh body{background:transparent}
+
+/* error box (P.onError): reason + "OK: try again / Back: close" */
+#player-err{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-width:720px;max-width:1100px;padding:44px 56px;border-radius:28px;background:rgba(20,20,22,.92);text-align:center;display:none;z-index:30}
+#player-err.show{display:block}
+#player-err .pe-m{font-size:40px;font-weight:700;color:#fff;line-height:1.4}
+#player-err .pe-h{margin-top:20px;font-size:28px;color:rgba(255,255,255,.7)}

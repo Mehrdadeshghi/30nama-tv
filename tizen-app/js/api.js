@@ -16,7 +16,11 @@
       out.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
     return out.join('&');
   }
-  api.raw = function (host, key, name, params, token) {
+  // per-action time limits (ms): the user waits for these; background ones (observer, tmdb) use prio 2
+  var LIMIT = { test: 6000, user: 10000, observer: 10000, stream: 15000, single: 15000, home_stream: 15000 };
+  var BG = { observer: 1, continue_watching_dismiss: 1 };
+  api.raw = function (host, key, name, params, token, o) {
+    o = o || {};
     var headers = {
       'Content-Type': 'application/x-www-form-urlencoded',
       'c-api-key': key,
@@ -24,7 +28,9 @@
       'c-version-number': C.apiVersion,
       'c-language': N.lang
     };
-    return timeout(N.fetch(host + '/action/' + name, { method: 'POST', headers: headers, body: enc(params || {}) }), 20000, name)
+    var ms = o.timeout || LIMIT[name] || 15000, prio = o.prio !== undefined ? o.prio : (BG[name] ? 2 : 1);
+    return N.fetch(host + '/action/' + name, { method: 'POST', headers: headers, body: enc(params || {}), timeout: ms, prio: prio })
+      .catch(function (e) { throw new Error((/timeout/.test(String(e && e.message)) ? 'timeout ' : 'network ') + name); })
       .then(function (r) { return r.status === 204 ? null : r.text(); })
       .then(function (txt) {
         // observer may answer 204 / an empty body: that is a success, not 'bad json' (only there, so a blank 200 never passes the host probe)
@@ -36,7 +42,7 @@
   // Try a discovery URL (CORS may block it in a browser; fall back to hardcoded hosts).
   function discover() {
     var tries = C.discoveryUrls.map(function (u) {
-      return timeout(N.fetch(u + '?t=' + Date.now()).then(function (r) { return r.json(); }), 6000, 'discovery')
+      return N.fetch(u + '?t=' + Date.now(), { timeout: 6000, prio: 0 }).then(function (r) { return r.json(); })
         .then(function (list) { if (!list || !list.length) throw new Error('empty'); return list; });
     });
     // first success wins
@@ -52,7 +58,7 @@
   function fetchRemoteKey(i) {
     var src = C.keySources[i || 0];
     if (!src) return Promise.reject(new Error('no key source'));
-    return timeout(N.fetch(src).then(function (r) { return r.text(); }), 20000, 'key')
+    return N.fetch(src, { timeout: 15000, prio: 0 }).then(function (r) { return r.text(); })
       .then(function (txt) { var m = /WEBTV['"]?\s*:\s*['"]([A-Za-z0-9]{24,})['"]/.exec(txt); if (!m) throw new Error('no key'); return m[1]; })
       .catch(function () { return fetchRemoteKey((i || 0) + 1); });
   }
@@ -63,7 +69,7 @@
     return new Promise(function (res, rej) {
       var left = hosts.length, done = false;
       hosts.forEach(function (h) {
-        timeout(api.raw(h, key, 'test', {}), 8000, 'test').then(function (j) {
+        api.raw(h, key, 'test', {}, '', { timeout: 8000, prio: 0 }).then(function (j) {
           if (done) return;
           if (j && j.success && !(j.result && j.result.platform === 'unknown')) { done = true; res({ host: h, key: key }); }
           else if (--left === 0) rej(new Error('rejected'));
@@ -72,32 +78,43 @@
     });
   }
 
-  api.init = function () {
+  // Start-up. 1) The host + key that worked last time get one quick `test` (usual case: ready in < 1 s).
+  // 2) Otherwise discovery, then every known key on every host at once (first one recognised wins), then the
+  //    key from the official clients. 3) After 20 s it gives up so the error screen (with Retry) appears instead
+  //    of a black screen. Before, these steps ran one after another and could take ~2 minutes.
+  function fullInit() {
     return discover().then(function (list) {
       var seen = {}, hosts = [];
-      list.concat(C.fallbackHosts).forEach(function (h) { if (!seen[h.host]) { seen[h.host] = 1; hosts.push(h.host); } });
+      list.concat(C.fallbackHosts).forEach(function (h) { if (h && h.host && !seen[h.host]) { seen[h.host] = 1; hosts.push(h.host); } });
       var cached = N.store.get('host', null);
       if (cached && !seen[cached]) hosts.unshift(cached);
       var saved = N.store.get('apiKey', null), keys = saved ? [saved] : [];
       C.apiKeys.forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
-      function tryKey(ki) {
-        if (ki < keys.length) return probe(hosts, keys[ki]).catch(function () { return tryKey(ki + 1); });
-        return fetchRemoteKey().then(function (k) {
-          if (keys.indexOf(k) >= 0) throw new Error('no endpoint reachable');
-          return probe(hosts, k).then(function (r) { N.store.set('apiKey', k); return r; });
-        }, function () { throw new Error('no endpoint reachable'); });
-      }
-      return tryKey(0);
-    }).then(function (r) {
+      return new Promise(function (res, rej) {
+        var left = keys.length + 1, done = false;
+        function fail() { if (--left === 0 && !done) rej(new Error('no endpoint reachable')); }
+        keys.forEach(function (k) { probe(hosts, k).then(function (r) { if (!done) { done = true; res(r); } }, fail); });
+        fetchRemoteKey().then(function (k) {
+          if (done || keys.indexOf(k) >= 0) { fail(); return; }
+          return probe(hosts, k).then(function (r) { if (!done) { done = true; N.store.set('apiKey', k); res(r); } }, fail);
+        }, fail);
+      });
+    });
+  }
+  api.init = function () {
+    var host = N.store.get('host', null), key = N.store.get('apiKey', null) || C.apiKeys[0];
+    var quick = host ? probe([host], key) : Promise.reject(new Error('no cache'));
+    var all = quick.catch(function () { return fullInit(); });
+    return timeout(all, 20000, 'start').then(function (r) {
       api.host = r.host; api.key = r.key; N.store.set('host', r.host);
       return r;
-    });
+    }, function () { throw new Error('no endpoint reachable'); });
   };
 
   // Generic action. Resolves with envelope; rejects on network errors.
-  api.call = function (name, params) {
+  api.call = function (name, params, o) {
     var token = N.session ? N.session.token : '';
-    return api.raw(api.host, api.key, name, params, token).then(function (j) {
+    return api.raw(api.host, api.key, name, params, token, o).then(function (j) {
       if (j && !j.success) guard(j);
       if (token && j && !j.success && isDenied(j)) checkSession(token, name);
       return j;
@@ -127,8 +144,8 @@
     });
   }
   // Resolves with result or rejects with Error(msg)
-  api.get = function (name, params) {
-    return api.call(name, params).then(function (j) {
+  api.get = function (name, params, o) {
+    return api.call(name, params, o).then(function (j) {
       if (!j || !j.success) { var e = new Error((j && j.msg) || 'error'); e.msg = j && j.msg; throw e; }
       return j.result;
     });

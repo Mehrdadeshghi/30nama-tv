@@ -11,7 +11,11 @@ An unofficial 30nama.com client for Samsung Tizen TVs, designed after the Apple 
 - Apple TV (tvOS) style UI: floating sidebar, hero that scrolls away into shelves, product-style details pages
 - Official 30nama branding; Persian UI with full right-to-left support, English titles everywhere
 - Sign in by scanning a QR code with your phone (login required)
-- Continue Watching with real progress, plus an In Progress section where you can remove items
+- Continue Watching with real progress, plus an In Progress section where you can remove items. One rule decides
+  where to continue (server state vs. what this TV saved), so the card, the details page and the player always agree;
+  OK on a card plays on directly, a finished episode shows the next one, episodes carry watched marks
+- Movies / Series / Anime with live filters (genre, type, year, IMDb, country, language, sort) using 30nama's
+  advanced search; the number of matches is shown while moving through a filter
 - Watchlist row and My List
 - Details with inline seasons and episodes, cast, resume and start over
 - Player: -30s / play-pause / +30s / next episode, quality and audio (original, 5.1, stereo) menus, episodes panel
@@ -118,7 +122,7 @@ Then open http://localhost:8080/. The proxy forwards API and HLS requests to avo
 
 ### CI and releases
 
-Every push to `main` and every pull request runs `.github/workflows/ci.yml`: an ES5 syntax check of `tizen-app/js` plus a version-consistency check (`tizen-app/tools/check.js`) and a headless smoke test that boots the app in Persian and English (`tizen-app/tools/smoke.js`).
+Every push to `main` and every pull request runs `.github/workflows/ci.yml`: an ES5 syntax check of `tizen-app/js` plus a version-consistency check (`tizen-app/tools/check.js`), a headless smoke test that boots the app in Persian and English (`tizen-app/tools/smoke.js`) and an end-to-end test (`tizen-app/tools/e2e.js`). The end-to-end test runs the app against a fake 30nama API and a fake Samsung AVPlay (which, like some TVs, can ignore a seek before play) and drives it with remote keys: start-up with a dead host, remote while loading, continue watching across home/details/player, next episode, dismiss, filters with live count, paging, search, player retry, live TV. Run it locally with `node tizen-app/tools/e2e.js [name filter]` (needs `playwright`).
 
 To publish a release, push a version tag:
 

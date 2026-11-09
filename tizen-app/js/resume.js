@@ -39,6 +39,11 @@
     var parts = bk.split(':');
     return { season: +parts[1] || 0, episode: +parts[2] || 0, time: best.t, duration: best.d, ts: best.ts, done: !!best.done };
   };
+  /* Stand einer einzelnen Folge/eines Films für Markierungen: {t, d, done, frac} oder null */
+  R.forEpisode = function (postId, info) {
+    var e = R.all()[k(postId, info)]; if (!e) return null;
+    return { t: e.t, d: e.d, done: !!e.done, frac: e.done ? 1 : (e.d > 0 ? Math.min(0.99, e.t / e.d) : 0), ts: e.ts };
+  };
   R.clear = function (postId, info) { var m = R.all(); delete m[k(postId, info)]; N.store.set(KEY, m); };
   /* alle Einträge eines Titels löschen (aus "Weiter schauen" entfernt) */
   R.clearPost = function (postId) {
@@ -81,39 +86,54 @@
     }
     return !loc.done && (+srv.time || 0) > loc.time + 60;
   };
+  /* DIE eine Entscheidung, wo es weitergeht - Startseite, "Weiter schauen", Detailseite und Player nehmen alle
+     diese Funktion, damit überall dieselbe Stelle steht. srv = Stand des Servers {season, episode, time, progress}
+     (oder null), loc = R.latestFor(id). Ergebnis {season, episode, time, duration, done, src} oder null. */
+  R.resolve = function (postId, srv) {
+    var loc = R.latestFor(postId);
+    var hasSrv = !!srv && ((+srv.time || 0) > 0 || +srv.season || +srv.episode || (parseFloat(srv.progress) || 0) > 0);
+    if (!loc && !hasSrv) return null;
+    if (loc && (!hasSrv || !R.serverWins(srv, loc))) return { season: loc.season, episode: loc.episode, time: loc.done ? 0 : loc.time, duration: loc.duration, done: loc.done, src: 'local', ts: loc.ts };
+    var pr = parseFloat(srv.progress) || 0, t = +srv.time || 0, d = pr > 0 && t > 0 ? t * 100 / pr : 0;
+    return { season: +srv.season || 0, episode: +srv.episode || 0, time: pr >= 95 ? 0 : t, duration: d, done: pr >= 95, src: 'server', ts: 0 };
+  };
   R.mergeCw = function (serverPosts) {
     var srv = serverPosts || [], byId = {}, out = [], used = {}, i, now = Date.now();
-    srv.forEach(function (p) { byId[String(p.id)] = p; });
+    srv.forEach(function (p) { if (p && p.id) byId[String(p.id)] = p; });
     var m = R.all(), lat = {};
     for (var key in m) if (m.hasOwnProperty(key)) {
       var id = key.split(':')[0];
       if (!lat[id] || m[key].ts > lat[id].ts) lat[id] = m[key];
     }
+    // erst die auf diesem Fernseher zuletzt geschauten Titel (neueste zuerst), dann der Rest in Server-Reihenfolge
     var ids = Object.keys(lat).filter(function (id) { return now - lat[id].ts < KEEP_MS; });
     ids.sort(function (a, b) { return lat[b].ts - lat[a].ts; });
+    srv.forEach(function (p) { if (p && p.id && ids.indexOf(String(p.id)) < 0) ids.push(String(p.id)); });
     var snaps = R.posts();
     for (i = 0; i < ids.length; i++) {
-      var id2 = ids[i], loc = R.latestFor(id2), sp = byId[id2];
-      if (!loc) continue;
-      if (sp && R.serverWins(sp.data, loc)) continue; // Server ist weiter: bleibt an seiner Stelle
-      var series = !!(loc.season || loc.episode);
-      if (loc.done && !series) { used[id2] = 1; continue; } // Film zu Ende geschaut: nicht mehr in "Weiter schauen"
+      var id2 = ids[i], sp = byId[id2], od = (sp && sp.data) || {};
       var base = sp || (snaps[id2] && snaps[id2].p);
-      if (!base) continue;
-      var p = {}, f, dd = {}, od = (sp && sp.data) || {};
+      if (!base || used[id2]) continue;
+      var r = R.resolve(id2, sp ? od : null);
+      if (!r) { if (sp) { out.push(sp); used[id2] = 1; } continue; }
+      var series = !!(r.season || r.episode) || !!(base.options && base.options.is_series);
+      if (r.done && !series) { used[id2] = 1; continue; }   // Film zu Ende geschaut: nicht mehr in "Weiter schauen"
+      var p = {}, f, dd = {};
       for (f in base) if (base.hasOwnProperty(f)) p[f] = base[f];
       for (f in od) if (od.hasOwnProperty(f)) dd[f] = od[f];
-      if (series) {
-        if (!(+od.season === loc.season && +od.episode === loc.episode)) dd.episode_title = '';
-        dd.season = loc.season; dd.episode = loc.episode;
+      if (series && (+od.season !== r.season || +od.episode !== r.episode)) dd.episode_title = '';
+      if (series) { dd.season = r.season || 1; dd.episode = r.episode || 1; }
+      if (r.done) {
+        // Folge zu Ende: die Karte zeigt die nächste Folge (ohne Balken); OK spielt sie ab
+        dd.episode = (r.episode || 0) + 1; dd.time = 0; dd.progress = '0'; dd.next = 1; dd.episode_title = '';
+      } else {
+        dd.time = r.time;
+        dd.progress = r.duration > 0 ? String(Math.min(99, r.time * 100 / r.duration)) : (od.progress || '0');
+        dd.next = 0;
       }
-      // gesehene Folge: "gesehen" statt Balken, die Detailseite bietet dann die nächste Folge an
-      dd.time = loc.done ? loc.duration : loc.time;
-      dd.progress = loc.done ? '100' : loc.duration > 0 ? String(Math.min(99, loc.time * 100 / loc.duration)) : (od.progress || '0');
-      p.data = dd; p._local = 1;
-      out.push(p); used[id2] = 1;
+      if (r.src === 'local') p._local = 1;
+      p.data = dd; out.push(p); used[id2] = 1;
     }
-    srv.forEach(function (p) { if (!used[String(p.id)]) out.push(p); });
     return out;
   };
 })();

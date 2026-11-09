@@ -8,9 +8,9 @@
     ['home', 'home', function () { N.go('home', {}, { reset: true }); }, 312],
     ['live', 'live', function () { N.go('live', {}, { reset: true }); }, 384], // Live TV (screens/live.js, fork addition)
     ['progress', 'progress', function () { N.go('progress', {}, { reset: true }); }, 456], // In progress (screens/progress.js)
-    ['movies', 'movies', function () { N.go('archive', { slug: 'movies', nameKey: 'movies' }, { reset: true }); }, 528],
-    ['series', 'series', function () { N.go('archive', { slug: 'series', nameKey: 'series' }, { reset: true }); }, 600],
-    ['anime', 'anime', function () { N.go('archive', { slug: 'anime', nameKey: 'anime' }, { reset: true }); }, 672],
+    ['movies', 'movies', function () { N.go('browse', { type: 'movie', nameKey: 'movies' }, { reset: true }); }, 528],
+    ['series', 'series', function () { N.go('browse', { type: 'series', nameKey: 'series' }, { reset: true }); }, 600],
+    ['anime', 'anime', function () { N.go('browse', { type: 'anime', nameKey: 'anime' }, { reset: true }); }, 672],
     ['archive', 'archive', function () { N.go('archive', {}, { reset: true }); }, 744],
     ['watchlist', 'list', function () { N.go('archive', { list: 'watchlist', nameKey: 'watchlist' }, { reset: true }); }, 816],
     ['settings', 'settings', function () { N.go('settings', {}, { reset: true }); }, 912]
@@ -89,6 +89,7 @@
     while (e && e.name === 'details' && i > 0) { i--; e = stack[i]; }
     if (!e) return '';
     if (e.name === 'archive' && e.params && (e.params.slug === 'movies' || e.params.slug === 'series' || e.params.slug === 'anime')) return e.params.slug;
+    if (e.name === 'browse' && e.params) return e.params.type === 'movie' ? 'movies' : e.params.type === 'series' ? 'series' : e.params.type === 'anime' ? 'anime' : 'archive';
     if (e.name === 'archive' && e.params && e.params.list) return 'watchlist';
     if (e.name === 'settings' && e.params && e.params.section === 'account') return 'prof';
     return e.name;
@@ -127,6 +128,8 @@
     if (same && current && stack.length === 1) { rail.mem = null; if (N.nav.cur && rail.isRail(N.nav.cur)) N.nav.clear(); N.nav.focusFirst(rootEl); return; }
     m[2]();
   };
+  // no focus target on the screen (still loading, error): any arrow / OK opens the sidebar instead of doing nothing
+  N.nav.onEmpty = function () { if (!rail.open && rail.visible()) rail.enter(); };
   // start-edge press with nothing to the start side opens the rail
   N.nav.onEdge = function (dir) {
     if (rail.open || !rail.visible() || (dir !== 'left' && dir !== 'right')) return;
@@ -182,7 +185,13 @@
     var r = el('div', 'screen enter ' + entry.name); content.appendChild(r); rootEl = r;
     setChrome(entry.name);
     rail.mark();
-    current = N.screens[entry.name](r, entry.params || {}, entry.focus) || {};
+    try { current = N.screens[entry.name](r, entry.params || {}, entry.focus) || {}; }
+    catch (e) {
+      // a screen that throws while building must not leave a dead, empty page: show the error view with Retry
+      N.diag('screen ' + entry.name + ': ' + (e && e.message));
+      current = {};
+      N.sc.errorView(r, e, function () { build(entry); });
+    }
   }
   function render(entry) {
     clearTimeout(swapT);
@@ -207,7 +216,8 @@
   N.onBack = function () {
     if (N.player.open) { N.player.close(); return; }
     if (modal) { N.closeModal(); return; }
-    if (rail.open) { N.confirmExit(); return; }
+    // sidebar open: on a sub-page Back just closes it again; only at the top level it asks to exit
+    if (rail.open) { if (stack.length > 1 || (current && current.back)) { rail.close(true); return; } N.confirmExit(); return; }
     if (current && current.back && current.back()) return;
     if (stack.length > 1) { stack.pop(); render(stack[stack.length - 1]); return; }
     if (rail.visible()) { rail.enter(); return; }
@@ -245,16 +255,17 @@
   function boot() {
     N.api.init().then(function () {
       rail.build();
-      var p = Promise.resolve();
+      // the account refresh runs in the background: the token alone is enough to start, so a slow `user`
+      // answer never keeps the splash up
       if (N.isLoggedIn()) {
-        p = N.api.call('user', {}).then(function (j) {
+        N.api.call('user', {}).then(function (j) {
           if (j && j.success && j.result) {
             var u = j.result.user_session ? j.result : (j.result.user || null);
             if (u && u.user_session) N.setSession(u); else { N.session.user = Object.assign({}, N.session.user, (j.result.user && typeof j.result.user === 'object') ? j.result.user : j.result); N.store.set('session', N.session); }
           }
+          if (!rail.open && rail.root) rail.build();   // name, avatar, days left
         }).catch(function () {});
       }
-      return p;
     }).then(function () {
       if (!N.isLoggedIn()) { N.go('login', {}, { reset: true }); return; } // login is mandatory (single-owner app)
       var st = N.live ? N.store.get('startScreen', 'home') : 'home';   // fork: start in Live TV / on the last channel
@@ -262,6 +273,17 @@
       else N.go('home', {}, { reset: true });
     }).catch(bootError);
   }
+
+  /* ---------------- diagnostics: last errors, shown in Settings ---------------- */
+  var diagList = [];
+  N.diag = function (m) {
+    var line = new Date().toTimeString().slice(0, 8) + ' ' + String(m).slice(0, 300);
+    diagList.push(line); if (diagList.length > 40) diagList.shift();
+    try { if (window.console) console.warn('[30nama] ' + line); } catch (e) {}
+  };
+  N.diagLines = function () { return diagList.slice(); };
+  window.addEventListener('error', function (e) { N.diag('error: ' + (e && e.message) + (e && e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : '')); });
+  window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; N.diag('promise: ' + ((r && r.message) || r)); });
 
   // Scale the 1920x1080 stage on smaller windows (desktop testing). No-op on a 1080p TV.
   function fit() {

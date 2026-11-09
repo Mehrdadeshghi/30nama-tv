@@ -10,6 +10,12 @@
     if (typeof v === 'number' || /^\d{9,13}$/.test(String(v))) { var n = Number(v); if (n < 1e11) n *= 1000; return new Date(n).toISOString().slice(0, 10); }
     return String(v);
   }
+  N.addStrings({
+    en: { diagShow: 'Error log', diagNone: 'No errors recorded since the app started.', resumeClear: 'Clear saved positions on this TV',
+      resumeClearB: 'Continue watching then only uses what 30nama knows.', resumeClearOk: 'Clear' },
+    fa: { diagShow: 'گزارش خطاها', diagNone: 'از شروع برنامه خطایی ثبت نشده است.', resumeClear: 'پاک کردن موقعیت‌های ذخیره‌شده روی این تلویزیون',
+      resumeClearB: 'بعد از آن «ادامه تماشا» فقط از اطلاعات سی‌نما استفاده می‌کند.', resumeClearOk: 'پاک کردن' }
+  });
   S.settings = function (root, params, restore) {
     var rows = [], stack = [], page = null, SS = N.subStyle, pv = null, PV_K = 0.5;
     root.classList.add('set'); N.stage.neutral(true);
@@ -121,6 +127,16 @@
         action(N.t('clearCache'), function () { N.tmdb.clearCache(); N.toast(N.t('cleared')); });
         slist.appendChild(el('div', 'note', N.t('tmdbCredit')));
       }
+      // help when something misbehaves: the last errors (to read out / photograph), and a reset of the saved positions
+      action(N.t('diagShow'), function () {
+        var ls = N.diagLines ? N.diagLines() : [];
+        N.confirm({ title: N.t('diagShow'), body: ls.length ? ls.slice(-12).join('\n') : N.t('diagNone'), ok: N.t('close'), onOk: function () {} });
+      });
+      action(N.t('resumeClear'), function () {
+        N.confirm({ title: N.t('resumeClear'), body: N.t('resumeClearB'), ok: N.t('resumeClearOk'), danger: true, onOk: function () {
+          N.store.del('resume'); N.store.del('resumePosts'); N.store.del('cwHidden'); N.dropHome(); N.toast(N.t('cleared'));
+        } });
+      });
     }
     // the list column slides in from the inline-end (enter) or the inline-start (back)
     function slide(cls) {

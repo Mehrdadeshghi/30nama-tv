@@ -39,3 +39,5 @@ jobs:
           for i in $(seq 1 30); do curl -sf -o /dev/null http://localhost:8080/ && exit 0; sleep 1; done
           cat /tmp/devserver.log; exit 1
       - run: node tizen-app/tools/smoke.js http://localhost:8080/
+      - name: End-to-end test (fake API + fake AVPlay, remote keys)
+        run: node tizen-app/tools/e2e.js

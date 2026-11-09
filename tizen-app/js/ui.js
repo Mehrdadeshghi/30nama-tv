@@ -111,8 +111,10 @@
   ui.epCard = function (it, idx, post, o) {
     o = o || {}; var i = (it && it.info) || {}, n = i.episode || (idx + 1), ov = [];
     ov.push(el('div', 'dim')); ov.push(el('div', 'grad')); ov.push(el('div', 'en tab', String(n)));
-    if (o.progress > 0) { var pb = el('div', 'prog'), pi = el('i'); pi.style.transform = 'scaleX(' + Math.min(1, o.progress) + ')'; pb.appendChild(pi); ov.push(pb); }
+    if (o.done) { var wm = el('div', 'watched-m'); wm.appendChild(ui.icon('check')); ov.push(wm); }
+    else if (o.progress > 0) { var pb = el('div', 'prog'), pi = el('i'); pi.style.transform = 'scaleX(' + Math.min(1, o.progress) + ')'; pb.appendChild(pi); ov.push(pb); }
     var c = ui.card(post, 'ep', { cap: false, overlays: ov }), ph = c._art.querySelector('.ph');
+    if (o.done) c.classList.add('is-watched');
     if (ph) c._art.removeChild(ph);
     c._src = ui.coverUrl(post) || c._src;
     var dur = Number(i.duration || i.time || 0); if (dur > 600) dur = dur / 60;

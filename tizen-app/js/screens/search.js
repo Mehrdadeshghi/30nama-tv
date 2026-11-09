@@ -88,7 +88,8 @@
       qt.classList.toggle('latin', lat);
       field.classList.toggle('long', !!q && qt.offsetWidth > field.clientWidth - 20); // keep the end of a long query in view
     }
-    function changed() { paintQ(); clearTimeout(timer); timer = setTimeout(run, 500); }
+    // results follow the typing (short pause so every key press does not fire a request)
+    function changed() { paintQ(); clearTimeout(timer); timer = setTimeout(run, 350); }
     hid.oninput = function () { q = hid.value; changed(); };
     hid.onenter = function () { hid.blur(); N.nav.focus(micKey, true); clearTimeout(timer); run(); };
     // physical keyboard (desktop testing / USB keyboards); MediaPlayPause = backspace while a key is focused
@@ -124,7 +125,7 @@
         posts.forEach(function (p, i) {
           var cell = ui.cell(p), c = cell.card;
           c.onclick = function () { N.go('details', { id: p.id }); };
-          c.onfocus2 = function () { cLast = i; loadAround(i); };
+          c.onfocus2 = function () { cLast = i; loadAround(i); if (i >= cells.length - 2 * COLS) nextPage(); };
           c.onnav = cellNav(i);
           cells.push(cell); rg.appendChild(cell);
         });
@@ -145,8 +146,26 @@
         show(ps.slice(0, 20), N.t('popularNow'), msg);
       }).catch(function () { if (!dead && my === seq) show([], '', msg || N.t('error')); });
     }
+    // further result pages, appended when focus nears the end
+    var sPage = 1, sPages = 1, sQ = '', sBusy = false;
+    function nextPage() {
+      if (sBusy || sPage >= sPages || !sQ) return;
+      var my = seq, want = sPage + 1; sBusy = true;
+      N.api.get('search', { query: sQ, streamonly: 'true', page: want }).then(function (r) {
+        sBusy = false; if (dead || my !== seq) return;
+        sPage = want; sPages = +(r && r.pages) || sPage;
+        sc.extractPosts(r).forEach(function (p) {
+          var i = cells.length, cell = ui.cell(p), c = cell.card;
+          c.onclick = function () { N.go('details', { id: p.id }); };
+          c.onfocus2 = function () { cLast = i; loadAround(i); if (i >= cells.length - 2 * COLS) nextPage(); };
+          c.onnav = cellNav(i);
+          cells.push(cell); rg.appendChild(cell);
+        });
+      }, function () { sBusy = false; });
+    }
     function run() {
       var qq = norm(q), my = ++seq;
+      sQ = ''; sPage = 1; sPages = 1; sBusy = false;
       if (qq.length < 3) { popular(''); return; } // the API rejects queries shorter than 3 letters
       function get(s) { return N.api.get('search', { query: s, streamonly: 'true', page: 1 }); }
       get(qq).then(function (r) {
@@ -157,6 +176,7 @@
         if (!r || dead || my !== seq) return;
         var ps = sc.extractPosts(r);
         if (!ps.length) { popular(N.tf('nothingFor', { q: '⁨' + qq + '⁩' })); return; }
+        sQ = r.__q || qq; sPages = +(r && r.pages) || 1;
         show(ps, N.t('topResults'), '');
       }).catch(function () { if (!dead && my === seq) popular(N.t('error')); });
     }

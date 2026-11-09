@@ -27,6 +27,7 @@
     if (Date.now() - e.t > life) return null;
     touch(key); return e;
   }
+  N.storePrune = function () { prune(); };   // N.store.set calls this when the storage is full
   function prune() {
     var list = [], i, k;
     try {
@@ -81,8 +82,9 @@
       return timeout(fetch('tools/fixtures/' + mockFile(path) + '.json').then(function (r) { if (!r.ok) throw new Error('fixture ' + r.status); return r.json(); }), 8000);
     }
     var q = qs(params);
-    return timeout(fetch(API + path + (q ? '?' + q : ''), { headers: { Authorization: 'Bearer ' + T.token(), Accept: 'application/json' } })
-      .then(function (r) { if (!r.ok) throw new Error('tmdb ' + r.status); return r.json(); }), 15000);
+    // N.fetch: aborted after 15 s and queued behind requests the user is waiting for (prio 2)
+    return N.fetch(API + path + (q ? '?' + q : ''), { headers: { Authorization: 'Bearer ' + T.token(), Accept: 'application/json' }, timeout: 15000, prio: 2 })
+      .then(function (r) { if (!r.ok) throw new Error('tmdb ' + r.status); return r.json(); });
   }
   var inflight = {};
   // o: {ttl, slim(json)} ; the slimmed value is what is cached and returned
@@ -285,7 +287,7 @@
     if (it.orig && norm(it.orig) !== norm(it.title) && /[a-z]/i.test(it.orig)) qs2.push(it.orig);
     function go(i) {
       if (i >= qs2.length || !qs2[i]) return null;
-      return N.api.get('search', { query: qs2[i], streamonly: 0, page: 1 }).then(function (r) { return bestPost((r && r.posts) || [], it) || go(i + 1); });
+      return N.api.get('search', { query: qs2[i], streamonly: 0, page: 1 }, { prio: 2 }).then(function (r) { return bestPost((r && r.posts) || [], it) || go(i + 1); });
     }
     return go(0);
   }
