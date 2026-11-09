@@ -86,7 +86,7 @@
     var box = el('div', 'arch'); root.appendChild(box);
     var head = el('div', 'ah'), ht = el('span', 'ht'), cnt = el('small', 'cnt', '');
     ui.txt(ht, prm.nameKey ? N.t(prm.nameKey) : (prm.name || N.t('archive'))); head.appendChild(ht); head.appendChild(cnt); box.appendChild(head);
-    var bar = el('div', 'bfbar'); box.appendChild(bar);
+    var bar = el('div', 'bfbar scroll'); bar.setAttribute('data-mv', '0'); box.appendChild(bar);   // .scroll: nav.ensureVisible keeps the focused chip in view
     var grid = el('div', 'ggrid'); box.appendChild(grid);
     box.reveal = function (e) { if (e._cell) ui.vscroll(box, e._cell, 260); else { box._ty = 0; box.style.transform = ''; } };
 
@@ -102,7 +102,12 @@
       return v ? (o ? o.t : String(v)) : N.t('fAll');
     }
     var KEYS = [['sort', 'fSort'], ['type', 'fType'], ['genre', 'fGenre'], ['year', 'fYear'], ['imdb', 'fImdb'], ['country', 'fCountry'], ['language', 'fLang']];
-    function isSet(key) { return key === 'sort' ? false : (key === 'type' ? f.type !== (prm.type || '') : f[key] !== '' && f[key] !== undefined); }
+    function isSet(key) {
+      if (key === 'sort') return false;
+      if (key === 'type') return f.type !== (prm.type || '');
+      if (key === 'genre') return f.genre !== (prm.genre || '');
+      return f[key] !== '' && f[key] !== undefined;
+    }
     function anySet() { for (var i = 0; i < KEYS.length; i++) if (isSet(KEYS[i][0])) return true; return false; }
     function buildBar() {
       bar.innerHTML = ''; chips = [];
@@ -122,7 +127,7 @@
         c.onfocus2 = function () { chipMem = i; box.reveal(c); };
         c.onnav = function (dir) {
           if (dir === 'up') return true;
-          if (dir === 'down') return cards.length ? cards[0] : true;
+          if (dir === 'down') return cards.length ? cards[0] : (grid.querySelector('.f') || true);
           var n = i + ui.step(dir);
           if (n < 0) { N.rail.enter(); return true; }
           return chips[n] || true;
@@ -164,7 +169,7 @@
       // under its chip, kept on screen
       root.appendChild(box2);
       var cr = chip.getBoundingClientRect(), rr = root.getBoundingClientRect(), sx = rr.width / 1920 || 1;
-      var x = (cr.left - rr.left) / sx; x = Math.max(60, Math.min(1920 - 60 - 560, x));
+      var x = (N.isRtl() ? cr.right - rr.left - 560 * sx : cr.left - rr.left) / sx; x = Math.max(60, Math.min(1920 - 60 - 560, x));   // fa: under the chip's right edge
       box2.style.left = x + 'px'; box2.style.top = ((cr.bottom - rr.top) / sx + 16) + 'px';
       pop = { el: box2, chip: chip };
       N.nav.pushScope(box2); void box2.offsetWidth; box2.classList.add('show');
@@ -204,7 +209,7 @@
     function addSkels(n) { for (var i = 0; i < n; i++) { var c = el('div', 'gcell sk'); c.appendChild(el('div', 'sk-p')); skels.push(c); grid.appendChild(c); } }
     function clearSkels() { skels.forEach(function (s) { if (s.parentNode) s.parentNode.removeChild(s); }); skels = []; }
     function upFromGrid() { return chips[Math.min(chipMem, chips.length - 1)] || true; }
-    function noRes() { var m = el('div', 'nores', N.t('noMatch')); m.className = 'nores bnores'; grid.appendChild(m); }
+    function noRes() { grid.appendChild(el('div', 'bmsg', N.t('noMatch'))); }
     function reset() {
       gen++; loading = false; page = 1; pages = 1; total = 0; cells = []; cards = []; grid.innerHTML = ''; skels = []; cnt.textContent = '';
       box.style.transition = 'none'; box._ty = null; box.style.transform = ''; void box.offsetWidth; box.style.transition = '';
@@ -238,7 +243,7 @@
       }).catch(function (e) {
         if (dead || my !== gen) return;
         loading = false; clearSkels();
-        if (!cells.length) { var m = el('div', 'nores bnores', N.t('error') + ' – ' + N.t('retry') + ': OK'); grid.appendChild(m); m.className += ' f'; m.onclick = function () { reset(); }; m.onnav = function (dir) { if (dir === 'up') return upFromGrid(); return true; }; }
+        if (!cells.length) { var m = el('div', 'bmsg f', N.t('error') + ' – ' + N.t('retry') + ': OK'); grid.appendChild(m); m.onclick = function () { reset(); }; m.onnav = function (dir) { if (dir === 'up') return upFromGrid(); return true; }; }
         else N.toast(N.t('error'), 2500);
       });
     }
@@ -251,7 +256,7 @@
       load();
     }
     var sk = el('div', 'msg', N.t('loading')); sk.style.cssText = 'position:absolute;top:300px;inset-inline-start:90px'; root.appendChild(sk);
-    params().then(start, function (e) { if (!dead) errorView(root, e, function () { N.go('browse', prm, { replace: true }); }); });
+    params().then(start).catch(function (e) { if (!dead) errorView(root, e, function () { N.go('browse', prm, { replace: true }); }); });
 
     return {
       destroy: function () { dead = true; clearTimeout(cntT); if (pop) { N.nav.popScope(); pop = null; } },

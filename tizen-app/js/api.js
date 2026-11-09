@@ -65,11 +65,11 @@
 
   // Probe `test` on all hosts with a key; resolves with the first host that recognises it.
   // `test` succeeds even for a rotated-out key, but then reports platform "unknown".
-  function probe(hosts, key) {
+  function probe(hosts, key, ms) {
     return new Promise(function (res, rej) {
       var left = hosts.length, done = false;
       hosts.forEach(function (h) {
-        api.raw(h, key, 'test', {}, '', { timeout: 8000, prio: 0 }).then(function (j) {
+        api.raw(h, key, 'test', {}, '', { timeout: ms || 8000, prio: 0 }).then(function (j) {
           if (done) return;
           if (j && j.success && !(j.result && j.result.platform === 'unknown')) { done = true; res({ host: h, key: key }); }
           else if (--left === 0) rej(new Error('rejected'));
@@ -103,10 +103,10 @@
   }
   api.init = function () {
     var host = N.store.get('host', null), key = N.store.get('apiKey', null) || C.apiKeys[0];
-    var quick = host ? probe([host], key) : Promise.reject(new Error('no cache'));
+    var quick = host ? probe([host], key, 5000) : Promise.reject(new Error('no cache'));
     var all = quick.catch(function () { return fullInit(); });
-    return timeout(all, 20000, 'start').then(function (r) {
-      api.host = r.host; api.key = r.key; N.store.set('host', r.host);
+    return timeout(all, 25000, 'start').then(function (r) {
+      api.host = r.host; api.key = r.key; N.store.set('host', r.host); N.store.set('apiKey', r.key);
       return r;
     }, function () { throw new Error('no endpoint reachable'); });
   };

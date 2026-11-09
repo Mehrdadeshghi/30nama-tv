@@ -19,8 +19,8 @@
   if (N.config.liveProxy === undefined) N.config.liveProxy = '';
   var CACHE_MS = 6 * 3600 * 1000, CACHE_KEY = 'live.cache2';
   var CH_UP = [427, 33], CH_DOWN = [428, 34];     // Samsung ChannelUp/Down, LG PageUp/PageDown
-  // a dead channel gives up after ~30 s instead of 60 s (4 attempts x 8 s); working streams start within ~3 s
-  var MAX_TRIES = 4, TRY_MS = 8000;
+  // a dead channel gives up after ~40 s instead of 60 s (4 attempts x 10 s, slow VPN routes included); working streams start within ~3 s
+  var MAX_TRIES = 4, TRY_MS = 10000;
 
   N.addStrings({
     en: {

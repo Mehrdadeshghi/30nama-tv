@@ -45,7 +45,7 @@ N.store = {
   // returns false when it could not be saved. Storage full (TMDB cache): make room once and retry, so
   // continue-watching positions are never lost silently.
   set: function (k, v) {
-    var s = JSON.stringify(v);
+    var s; try { s = JSON.stringify(v); } catch (e0) { return false; }
     try { localStorage.setItem('n30.' + k, s); return true; } catch (e) {}
     try { if (N.storePrune) N.storePrune(); localStorage.setItem('n30.' + k, s); return true; } catch (e2) {}
     try { if (window.console) console.warn('storage full: ' + k); } catch (e3) {}

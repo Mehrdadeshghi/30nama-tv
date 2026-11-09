@@ -47,6 +47,13 @@
   }
   function viaService(url, opts) {
     opts = opts || {};
+    var ms = opts.timeout || 15000;
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () { rej(new Error('timeout')); }, ms);
+      viaService0(url, opts).then(function (r) { clearTimeout(t); res(r); }, function (e) { clearTimeout(t); rej(e); });
+    });
+  }
+  function viaService0(url, opts) {
     var body = opts.body === undefined || opts.body === null ? '' : String(opts.body);
     return luna('fetch', { url: url, method: opts.method || 'GET', headers: plainHeaders(opts.headers), body: body })
       .then(function (r) {
@@ -89,15 +96,18 @@
     opts = opts || {};
     var host = hostOf(url) || 'local', ms = opts.timeout || 15000;
     return new Promise(function (res, rej) {
-      var job = { host: host, prio: opts.prio === undefined ? 1 : opts.prio, seq: seqN++ };
+      var job = { host: host, prio: opts.prio === undefined ? 1 : opts.prio, seq: seqN++ }, x = null, done = false, started = false;
+      function finish(ok, v) {
+        if (done) return; done = true; clearTimeout(t);
+        if (started) { active[host] = Math.max(0, (active[host] || 1) - 1); setTimeout(pump, 0); }
+        else { var qi = queue.indexOf(job); if (qi >= 0) queue.splice(qi, 1); }
+        if (ok) res(v); else rej(v);
+      }
+      // the limit counts from the call, waiting in the queue included (the user waits that long either way)
+      var t = setTimeout(function () { finish(false, new Error('timeout')); if (x) { try { x.abort(); } catch (e) {} } }, ms);
       job.start = function () {
-        var x = new XMLHttpRequest(), done = false, t = null;
-        function finish(ok, v) {
-          if (done) return; done = true; clearTimeout(t);
-          active[host] = Math.max(0, (active[host] || 1) - 1);
-          setTimeout(pump, 0);
-          if (ok) res(v); else rej(v);
-        }
+        if (done) { active[host] = Math.max(0, (active[host] || 1) - 1); setTimeout(pump, 0); return; }
+        started = true; x = new XMLHttpRequest();
         try {
           x.open(opts.method || 'GET', N.proxied(url), true);
           var h = opts.headers || {};
@@ -106,9 +116,6 @@
         x.onload = function () { finish(true, xhrResponse(x)); };
         x.onerror = function () { finish(false, new TypeError('network error')); };
         x.onabort = function () { finish(false, new Error('aborted')); };
-        // own timer instead of xhr.timeout: it also covers time spent waiting in the queue's slot
-        t = setTimeout(function () { try { x.abort(); } catch (e) {} finish(false, new Error('timeout')); }, ms);
-        if (opts.signal) opts.signal.onabort = function () { try { x.abort(); } catch (e) {} };
         try { x.send(opts.body === undefined ? null : opts.body); } catch (e) { finish(false, e); }
       };
       queue.push(job); pump();

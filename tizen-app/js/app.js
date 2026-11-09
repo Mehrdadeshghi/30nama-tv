@@ -116,6 +116,7 @@
   rail.close = function (restore) {
     if (!rail.open) return;
     rail.open = false; rail.root.classList.remove('open');
+    if (railStale) { railStale = false; rail.build(); }
     var m = rail.mem; rail.mem = null;
     if (restore) {
       if (m && m.offsetWidth > 0 && rootEl && rootEl.contains(m)) N.nav.focus(m, true);
@@ -130,6 +131,9 @@
   };
   // no focus target on the screen (still loading, error): any arrow / OK opens the sidebar instead of doing nothing
   N.nav.onEmpty = function () { if (!rail.open && rail.visible()) rail.enter(); };
+  N.nav.onFocus = function (e) {
+    if (rail.open && e && !rail.isRail(e) && rootEl && rootEl.contains(e)) { rail.open = false; rail.root.classList.remove('open'); rail.mem = null; if (railStale) { railStale = false; rail.build(); } }
+  };
   // start-edge press with nothing to the start side opens the rail
   N.nav.onEdge = function (dir) {
     if (rail.open || !rail.visible() || (dir !== 'left' && dir !== 'right')) return;
@@ -217,13 +221,15 @@
     if (N.player.open) { N.player.close(); return; }
     if (modal) { N.closeModal(); return; }
     // sidebar open: on a sub-page Back just closes it again; only at the top level it asks to exit
-    if (rail.open) { if (stack.length > 1 || (current && current.back)) { rail.close(true); return; } N.confirmExit(); return; }
+    if (rail.open) { if (stack.length > 1) { rail.close(true); return; } N.confirmExit(); return; }
     if (current && current.back && current.back()) return;
     if (stack.length > 1) { stack.pop(); render(stack[stack.length - 1]); return; }
     if (rail.visible()) { rail.enter(); return; }
     N.confirmExit();
   };
-  N.onSessionChange = function () { if (rail.root) { rail.close(false); rail.build(); } }; // profile row + watchlist item follow the session
+  // profile row + watchlist item follow the session; never rebuilt under the user's focus (then on the next close)
+  var railStale = false;
+  N.onSessionChange = function () { if (!rail.root) return; if (rail.open) { railStale = true; return; } rail.build(); };
   function resetLists() { if (N.lists && N.lists.reset) N.lists.reset(); }
   N.onLogout = function () { N.dropHome(); resetLists(); N.go('login', {}, { reset: true }); };
   N.onSessionExpired = function () {
@@ -263,7 +269,7 @@
             var u = j.result.user_session ? j.result : (j.result.user || null);
             if (u && u.user_session) N.setSession(u); else { N.session.user = Object.assign({}, N.session.user, (j.result.user && typeof j.result.user === 'object') ? j.result.user : j.result); N.store.set('session', N.session); }
           }
-          if (!rail.open && rail.root) rail.build();   // name, avatar, days left
+          if (N.onSessionChange) N.onSessionChange();   // name, avatar, days left
         }).catch(function () {});
       }
     }).then(function () {

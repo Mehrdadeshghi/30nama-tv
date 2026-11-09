@@ -97,7 +97,7 @@
       play: function () { try { av.play(); } catch (e) {} },
       pause: function () { try { av.pause(); } catch (e) {} },
       confirmedTime: function () { return state.repN >= 2 ? state.rep : -1; },
-      seek: function (sec) { state.repN = 0; try { av.seekTo(Math.max(0, Math.floor(sec * 1000)), function () { state.cur = sec; }, function () {}); } catch (e) { try { av.seekTo(Math.max(0, Math.floor(sec * 1000))); state.cur = sec; } catch (e2) {} } },
+      seek: function (sec) { state.repN = 0; state.cur = sec; try { av.seekTo(Math.max(0, Math.floor(sec * 1000)), function () {}, function () {}); } catch (e) { try { av.seekTo(Math.max(0, Math.floor(sec * 1000))); state.cur = sec; } catch (e2) {} } },
       time: function () { return state.cur; },
       buffered: function () { return 0; },
       duration: function () { return state.dur; },
@@ -520,7 +520,10 @@
     if (!P.be) return;
     var now = Date.now();
     // resume check: once playing, the position must be near the start spot; else seek once more, then accept
-    if (!P.startOk && !P.loading && !P.paused) {
+    // (the clock only runs while nothing is buffering, so a slow seek gets no second seek on top)
+    var buffering = !$('player-spin').classList.contains('hidden');
+    if (!P.startOk && !P.loading && !P.paused && buffering) { if (P.playT0) P.playT0 += 250; }
+    else if (!P.startOk && !P.loading && !P.paused) {
       if (!P.playT0) P.playT0 = now;
       var tc = P.be.confirmedTime ? P.be.confirmedTime() : P.be.time();
       if (tc >= 0 && tc >= P.startAt - 15) P.startOk = true;

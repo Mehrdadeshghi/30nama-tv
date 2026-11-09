@@ -202,12 +202,12 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     return page;
   });
 
-  await test('start-up with a dead API host shows Retry within 25 s', async function (np) {
+  await test('start-up with a dead API host shows Retry within 30 s', async function (np) {
     var page = await np({ store: { 'n30.host': JSON.stringify('https://world.hana-api.com/api/v2') } });
     FAKE.hang.test = 1;
     var t0 = Date.now(); await page.goto(BASE);
-    await waitFor(page, function () { var c = N.nav.cur; return c && /Retry/.test(c.textContent); }, 26000, 'Retry button');
-    ok(Date.now() - t0 < 25000, 'took ' + (Date.now() - t0) + ' ms');
+    await waitFor(page, function () { var c = N.nav.cur; return c && /Retry/.test(c.textContent); }, 31000, 'Retry button');
+    ok(Date.now() - t0 < 30000, 'took ' + (Date.now() - t0) + ' ms');
     return page;
   });
 
@@ -293,7 +293,7 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     await page.evaluate(function () { N.go('home', {}, { reset: true }); });
     await waitFor(page, function () { return document.querySelector('.k-cw'); }, 8000, 'cw row');
     var cap = await page.evaluate(function () { return document.querySelector('.k-cw .cap').textContent; });
-    ok(/E2/.test(cap) && /Next episode/.test(cap), 'home caption: ' + cap);
+    ok(/Next episode/.test(cap), 'home caption: ' + cap);
     return page;
   });
 
@@ -343,6 +343,47 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     await page.evaluate(function () { N.nav.focus(document.querySelector('.screen.live .card')); });
     await page.key('Enter');
     await waitFor(page, function () { return window.__av.playing; }, 8000, 'live playing');
+    return page;
+  });
+
+  await test('season finale watched: next is S2 E1 (details and card)', async function (np) {
+    var page = await np({ store: { 'n30.resume': JSON.stringify({ '201:1:4': { t: 0, d: 2700, f: '', ts: Date.now() - 60e3, done: 1 } }), 'n30.resumePosts': JSON.stringify({ '201': { p: title(SERIES, 'series'), ts: Date.now() } }) } });
+    await page.goto(BASE);
+    await waitFor(page, function () { return document.querySelector('.k-cw'); }, 8000, 'cw card');
+    await page.evaluate(function () { N.nav.focus(document.querySelector('.k-cw')); });
+    await page.key('Enter');
+    await waitFor(page, function () { return N.player.open && window.__av.playing; }, 8000, 'player');
+    var url = await page.evaluate(function () { return window.__av.url; });
+    ok(/201-2-1/.test(url), 'played ' + url);
+    return page;
+  });
+
+  await test('start over is not undone by the old server position', async function (np) {
+    var page = await np();
+    FAKE.cwStream[MOVIE] = { post_id: MOVIE, file_id: MOVIE * 10, time: 1800, progress: 25 };
+    await page.goto(BASE);
+    await waitFor(page, function () { return N.nav.cur; }, 8000);
+    await page.evaluate(function () { N.go('details', { id: 101 }); });
+    await waitFor(page, function () { return document.querySelector('.d-btns .btn.circle'); }, 8000, 'restart button');
+    await page.evaluate(function () { N.nav.focus(document.querySelector('.d-btns .btn.circle')); });
+    await page.key('Enter');
+    await waitFor(page, function () { return N.player.open && window.__av.playing; }, 8000);
+    await sleep(2000);
+    var t = await page.evaluate(function () { return window.__av.cur / 1000; });
+    ok(t < 10, 'start over began at ' + t);
+    await closePlayer(page);
+    var lab = await page.evaluate(function () { return document.querySelector('.d-btns .btn').textContent; });
+    ok(/Play/.test(lab) && !/Resume/.test(lab), 'button after start over: ' + lab);
+    return page;
+  });
+
+  await test('Back at the top level reaches the exit dialog', async function (np) {
+    var page = await np();
+    await page.goto(BASE);
+    await waitFor(page, function () { return document.querySelector('.screen.home') && N.nav.cur; }, 8000);
+    await page.key('Escape'); await page.key('Escape');
+    var modal = await page.evaluate(function () { return !!document.querySelector('.modal'); });
+    ok(modal, 'no exit dialog after Back, Back');
     return page;
   });
 

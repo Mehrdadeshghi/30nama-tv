@@ -130,7 +130,7 @@
       // help when something misbehaves: the last errors (to read out / photograph), and a reset of the saved positions
       action(N.t('diagShow'), function () {
         var ls = N.diagLines ? N.diagLines() : [];
-        N.confirm({ title: N.t('diagShow'), body: ls.length ? ls.slice(-12).join('\n') : N.t('diagNone'), ok: N.t('close'), onOk: function () {} });
+        N.confirm({ title: N.t('diagShow'), body: ls.length ? ls.slice(-12).map(function (l) { return '\u2066' + l + '\u2069'; }).join('\n') : N.t('diagNone'), ok: N.t('close'), onOk: function () {} });
       });
       action(N.t('resumeClear'), function () {
         N.confirm({ title: N.t('resumeClear'), body: N.t('resumeClearB'), ok: N.t('resumeClearOk'), danger: true, onOk: function () {

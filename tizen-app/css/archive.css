@@ -19,7 +19,8 @@
 
 /* ---------- browse with filters (screens/browse.js) ---------- */
 .browse .arch .ah{top:44px}
-.bfbar{position:absolute;top:140px;inset-inline-start:90px;width:1740px;display:flex;flex-wrap:nowrap;overflow:visible}
+.bfbar{position:absolute;top:128px;inset-inline-start:76px;width:1768px;padding:12px 14px;display:flex;flex-wrap:nowrap;overflow:hidden}
+.bfbar .bchip{flex:none}
 .bfbar .bchip{height:64px;padding:0 24px;margin-inline-end:14px;font-size:26px;background:var(--fill-3)}
 .bfbar .bchip .bk{color:var(--label-3);font-weight:500;margin-inline-end:10px}
 .bfbar .bchip .bv{font-weight:700;color:var(--label-1);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -28,8 +29,8 @@
 .bfbar .bchip.focus .bk,.bfbar .bchip.focus .bv{color:var(--focus-ink)}
 .bfbar .bchip.reset .ico{width:26px;height:26px;margin-inline-end:8px}
 .browse .ggrid{top:250px}
-.bnores{position:relative;width:1740px;font-size:31px;color:var(--label-2);padding:40px 0}
-.bnores.f.focus{color:var(--label-1);text-decoration:underline}
+.bmsg{position:relative;width:1740px;font-size:31px;line-height:1.5;color:var(--label-2);padding:40px 0}
+.bmsg.f.focus{color:var(--label-1);text-decoration:underline}
 .bpop{position:absolute;z-index:40;width:560px;max-height:700px;padding:18px 0 14px;border-radius:24px;background:rgba(32,32,36,.97);box-shadow:0 24px 60px rgba(0,0,0,.6);opacity:0;transform:translateY(-8px);transition:opacity .15s,transform .15s}
 .bpop.show{opacity:1;transform:none}
 .bpop .bp-h{display:flex;justify-content:space-between;align-items:baseline;padding:0 30px 10px;font-size:26px;font-weight:700;color:var(--label-2)}

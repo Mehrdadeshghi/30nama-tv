@@ -23,7 +23,7 @@
   N.cwNorm = function (p) {
     var dd = p.data || {}, pr = parseFloat(dd.progress) || 0, t = +dd.time || 0, parts = [];
     var left = pr > 0 && pr < 95 ? Math.max(1, Math.round((t * 100 / pr - t) / 60)) : 0;
-    if (dd.season && dd.episode) {
+    if (dd.season && dd.episode && !dd.next) {
       // fa: two dot-separated parts (فصل ۳ · قسمت ۱۰); en: 'S3, E10'
       if (N.lang === 'fa') { parts.push(N.t('season') + ' ' + dd.season); parts.push(N.tf('epN', { n: dd.episode })); }
       else parts.push(N.fmt.ep(dd.season, dd.episode));

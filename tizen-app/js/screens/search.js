@@ -170,7 +170,7 @@
       function get(s) { return N.api.get('search', { query: s, streamonly: 'true', page: 1 }); }
       get(qq).then(function (r) {
         if (dead || my !== seq) return null;
-        if ((!r || !r.posts || !r.posts.length) && qq.indexOf(ZWNJ) >= 0) return get(qq.replace(/‌/g, ' '));
+        if ((!r || !r.posts || !r.posts.length) && qq.indexOf(ZWNJ) >= 0) { var q2 = qq.replace(/‌/g, ' '); return get(q2).then(function (r2) { if (r2) r2.__q = q2; return r2; }); }
         return r;
       }).then(function (r) {
         if (!r || dead || my !== seq) return;

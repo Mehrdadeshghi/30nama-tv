@@ -37,12 +37,19 @@
     for (var key in m) if (m.hasOwnProperty(key) && key.indexOf(p) === 0 && (!best || m[key].ts > best.ts)) { best = m[key]; bk = key; }
     if (!best) return null;
     var parts = bk.split(':');
-    return { season: +parts[1] || 0, episode: +parts[2] || 0, time: best.t, duration: best.d, ts: best.ts, done: !!best.done };
+    return { season: +parts[1] || 0, episode: +parts[2] || 0, time: best.t, duration: best.d, ts: best.ts, done: !!best.done, rs: !!best.rs };
   };
   /* Stand einer einzelnen Folge/eines Films für Markierungen: {t, d, done, frac} oder null */
   R.forEpisode = function (postId, info) {
     var e = R.all()[k(postId, info)]; if (!e) return null;
     return { t: e.t, d: e.d, done: !!e.done, frac: e.done ? 1 : (e.d > 0 ? Math.min(0.99, e.t / e.d) : 0), ts: e.ts };
+  };
+  /* "Von vorn": merkt sich den Neustart (Zeit 0), damit der ältere Stand des Servers die Stelle nicht zurückholt.
+     Sobald 30 s geschaut sind, ersetzt die normale Position die Markierung. */
+  R.restart = function (postId, info) {
+    if (!postId) return;
+    var m = R.all(); m[k(postId, info)] = { t: 0, d: 0, f: String((info && info.file_id) || ''), ts: Date.now(), rs: 1 };
+    trim(m); N.store.set(KEY, m);
   };
   R.clear = function (postId, info) { var m = R.all(); delete m[k(postId, info)]; N.store.set(KEY, m); };
   /* alle Einträge eines Titels löschen (aus "Weiter schauen" entfernt) */
@@ -81,10 +88,10 @@
     var ss = +srv.season || 0, se = +srv.episode || 0;
     if (ss || se) {
       if (later(ss, se, loc.season, loc.episode)) return true;
-      if (ss === loc.season && se === loc.episode && !loc.done && (+srv.time || 0) > loc.time + 60) return true;
+      if (ss === loc.season && se === loc.episode && !loc.done && !loc.rs && (+srv.time || 0) > loc.time + 60) return true;
       return false;
     }
-    return !loc.done && (+srv.time || 0) > loc.time + 60;
+    return !loc.done && !loc.rs && (+srv.time || 0) > loc.time + 60;
   };
   /* DIE eine Entscheidung, wo es weitergeht - Startseite, "Weiter schauen", Detailseite und Player nehmen alle
      diese Funktion, damit überall dieselbe Stelle steht. srv = Stand des Servers {season, episode, time, progress}
@@ -123,9 +130,13 @@
       for (f in od) if (od.hasOwnProperty(f)) dd[f] = od[f];
       if (series && (+od.season !== r.season || +od.episode !== r.episode)) dd.episode_title = '';
       if (series) { dd.season = r.season || 1; dd.episode = r.episode || 1; }
+      // der eigene Stand des Servers bleibt erhalten (die Detailseite entscheidet mit genau diesen Daten neu)
+      dd._srv = sp ? { season: +od.season || 0, episode: +od.episode || 0, time: +od.time || 0, progress: od.progress } : null;
+      dd._src = r.src;
       if (r.done) {
-        // Folge zu Ende: die Karte zeigt die nächste Folge (ohne Balken); OK spielt sie ab
-        dd.episode = (r.episode || 0) + 1; dd.time = 0; dd.progress = '0'; dd.next = 1; dd.episode_title = '';
+        // Folge zu Ende: "Nächste Folge" ohne Balken; welche das ist (auch über das Staffelende), weiß erst die
+        // Detailseite mit der Folgenliste - OK auf der Karte spielt sie ab
+        dd.time = 0; dd.progress = '0'; dd.next = 1; dd.episode_title = '';
       } else {
         dd.time = r.time;
         dd.progress = r.duration > 0 ? String(Math.min(99, r.time * 100 / r.duration)) : (od.progress || '0');

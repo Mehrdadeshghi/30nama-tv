@@ -77,8 +77,10 @@
             if (String(f.file_id) === String(cw.file_id)) return { season: +f.season || 0, episode: N.resume.epNo(f), time: +cw.time || 0, progress: cw.progress };
           }
         }
+        // the Continue Watching list's copy of the SERVER state (merged cards keep it in _srv)
         var cd = N.cwData[post.id];
-        if (cd && !cd._local) return { season: +cd.season || 0, episode: +cd.episode || 0, time: +cd.time || 0, progress: cd.progress };
+        if (cd && cd._srv !== undefined) return cd._srv;
+        if (cd) return { season: +cd.season || 0, episode: +cd.episode || 0, time: +cd.time || 0, progress: cd.progress };
         return null;
       }
       function idxOf(season, ep) {
@@ -100,7 +102,12 @@
       // withResume=false: from the start (the saved spot of that episode is cleared, so nothing jumps back later)
       function play(i, withResume) {
         lastFocus = N.nav.cur;
-        if (!withResume) try { N.resume.clear(post.id, (items[i] && items[i].info) || {}); } catch (e) {}
+        if (!withResume) {
+          // start over: remember it, and forget the server state this page loaded (it still has the old spot)
+          try { N.resume.restart(post.id, (items[i] && items[i].info) || {}); } catch (e) {}
+          if (st) st.continue_watching = null;
+          delete N.cwData[post.id];
+        }
         N.player.start(post, items, i, withResume ? (i === startIdx ? resume : null) : false);
       }
       function resumeInfo() {
@@ -430,6 +437,7 @@
       };
       N.nav.focus(playB, true);
       if (params.autoplay) {
+        params.autoplay = 0;   // once: Back to this page or a re-render must not start the player again
         if (items.length) play(startIdx, true); else noStream();
       }
     }
