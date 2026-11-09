@@ -154,7 +154,8 @@
         if (window.Hls && Hls.isSupported()) {
           // startPosition: hls.js lädt direkt ab der Fortsetzen-Stelle (currentTime vor dem Laden wird ignoriert)
           // worker: segment parsing off the UI thread (otherwise 4K streams make the remote lag); bounded buffers for TV memory
-          hls = new Hls({ enableWorker: true, abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1,
+          hls = new Hls({ enableWorker: !window.AndroidBridge,   // Android shell: requests must pass the app's own loader (CORS)
+            abrEwmaDefaultEstimate: 5000000, startPosition: startSec > 5 ? startSec : -1,
             backBufferLength: 30, maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 60 * 1000 * 1000,
             manifestLoadingTimeOut: 15000, levelLoadingTimeOut: 15000, fragLoadingTimeOut: 30000 }); // open near 1080p instead of 240p
           hls.on(Hls.Events.ERROR, function (ev, d) {
