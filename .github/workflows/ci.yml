@@ -20,6 +20,8 @@ jobs:
           node-version: '20'
       - run: npm i --no-save --no-package-lock acorn@8.12.1
       - run: node tizen-app/tools/check.js
+      - name: Phone service (TizenBrew sandbox, resumable upload, streaming while uploading)
+        run: node tizen-app/tools/service-test.js
 
   smoke:
     name: Headless smoke test (fa + en)

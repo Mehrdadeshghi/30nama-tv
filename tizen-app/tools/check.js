@@ -16,6 +16,14 @@ function fail(msg) { bad++; console.error('FAIL ' + msg); }
   });
 })(path.join(APP, 'js'));
 
+// 1b. the TizenBrew service (Node 4.4.3 on 2018 TVs) is ES5 too, and service/phone.js is built from service/src/
+try { acorn.parse(fs.readFileSync(path.join(APP, 'service', 'phone.js'), 'utf8'), { ecmaVersion: 5, sourceType: 'script' }); }
+catch (e) { fail('service/phone.js:' + (e.loc ? e.loc.line + ':' + e.loc.column : '') + ' not ES5: ' + e.message); }
+try { require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'build-service.js'), '--check'], { stdio: 'pipe' }); }
+catch (e) { fail(String(e.stderr || e.message).trim()); }
+var pkgJ = JSON.parse(fs.readFileSync(path.join(APP, '..', 'package.json'), 'utf8'));
+if (pkgJ.serviceFile !== 'tizen-app/service/phone.js') fail('package.json serviceFile must be tizen-app/service/phone.js');
+
 // 2. every local <script src> / stylesheet in index.html exists (tmdb-token.js is optional and generated at build time)
 var html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8'), re = /(?:src|href)="([^"]+)"/g, m;
 while ((m = re.exec(html))) {

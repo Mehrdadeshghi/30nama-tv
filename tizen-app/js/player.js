@@ -54,6 +54,8 @@
     if (main) e.style.bottom = SS.opt('subPos', o.subPos).px + 'px';
     return o;
   };
+  // a plain media file (phone videos) instead of an HLS playlist: the <video> element plays it directly
+  P.isFile = function (u) { return /\.(mp4|m4v|mov|3gp|mkv|webm|avi|ts|mp3|m4a|aac)(\?|$)/i.test(String(u || '')); };
   var hasAV = function () { return !!(window.webapis && window.webapis.avplay); };
 
   /* ---------- backends ---------- */
@@ -151,7 +153,7 @@
         v.onerror = function () { P.onError('video error'); };
         v.onloadedmetadata = go;
         var src = N.proxied(url);
-        if (window.Hls && Hls.isSupported()) {
+        if (window.Hls && Hls.isSupported() && !P.isFile(url)) {
           // startPosition: hls.js lädt direkt ab der Fortsetzen-Stelle (currentTime vor dem Laden wird ignoriert)
           // worker: segment parsing off the UI thread (otherwise 4K streams make the remote lag); bounded buffers for TV memory
           hls = new Hls({ enableWorker: !window.AndroidBridge,   // Android shell: requests must pass the app's own loader (CORS)
@@ -314,7 +316,7 @@
   var SCRUB_W = 1740, glyphT = null, unState = null, el = N.el;
   P.spin = function (on) { $('player-spin').classList.toggle('hidden', !on); };
   P.start = function (post, items, index, resume) {
-    try { if (N.resume) N.resume.notePost(post); } catch (e) {}
+    try { if (N.resume && !(post && post.local)) N.resume.notePost(post); } catch (e) {}
     P.obsFail = 0; P.obsWarned = false; P.lsT = 0;
     P.post = post; P.items = items; P.noResume = resume === false; P.resume = resume || null; P.open = true; P.qSel = null; P.chSel = null; P.ctl = -1;
     $('player').classList.remove('hidden');
@@ -465,6 +467,8 @@
   function saveLocal() {
     if (!P.be || P.loading || P.seekAcc || !P.startOk || P.err) return;
     var item0 = P.items[P.index], info0 = (item0 && item0.info) || {};
+    // a video from the phone (screens/phone.js) keeps its own spot and never reaches 30nama's lists
+    if (P.post && P.post.local) { try { if (P.post.onSave) P.post.onSave(P.be.time(), P.be.duration()); } catch (e) {} P.lsT = Date.now(); return; }
     try { if (N.resume) N.resume.save(P.post && P.post.id, info0, P.be.time(), P.be.duration()); } catch (e) {}
     P.lsT = Date.now();
   }
@@ -472,6 +476,7 @@
   P.report = function () {
     if (!P.be) return;
     saveLocal();
+    if (P.post && P.post.local) return;
     if (!N.isLoggedIn() || P.loading || !P.startOk || P.err) return;
     var item = P.items[P.index], info = item.info || {};
     var t = Math.floor(P.be.time()), d = Math.floor(P.be.duration());

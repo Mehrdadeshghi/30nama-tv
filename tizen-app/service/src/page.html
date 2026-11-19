@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111113">
+<title>سی‌نما · ارسال به تلویزیون</title>
+<style>
+:root{--bg:#111113;--card:#1d1d20;--line:#2c2c30;--t1:#f5f5f7;--t2:#a1a1a8;--brand:#f5c518;--ok:#34c759;--bad:#ff453a;--r:18px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px calc(40px + env(safe-area-inset-bottom))}
+h1{font-size:22px;margin:4px 0 2px}
+.sub{color:var(--t2);font-size:14px;margin:0 0 18px}
+.card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.pick{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:64px;border-radius:var(--r);background:var(--brand);color:#000;font-size:19px;font-weight:700;border:0;cursor:pointer}
+.pick input{display:none}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sw{display:flex;align-items:center;gap:10px;margin-top:14px;color:var(--t2);font-size:15px}
+.sw input{width:22px;height:22px;accent-color:var(--brand)}
+.nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext;text-align:right}
+.meta{color:var(--t2);font-size:14px}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0 6px}
+.bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
+.done .bar i{background:var(--ok)}
+.err{color:var(--bad)}
+.btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+button.b{flex:1;min-height:46px;border-radius:12px;border:0;background:var(--line);color:var(--t1);font:inherit;font-weight:600;cursor:pointer}
+button.b.p{background:var(--t1);color:#000}
+button.b.d{flex:0 0 auto;padding:0 16px;color:var(--bad)}
+.remote{direction:ltr;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.remote button{min-height:56px;border-radius:14px;border:0;background:var(--line);color:var(--t1);font-size:20px;cursor:pointer}
+.remote button small{display:block;font-size:11px;color:var(--t2)}
+h2{font-size:16px;margin:22px 4px 10px;color:var(--t2);font-weight:600}
+.item{border-top:1px solid var(--line);padding:12px 0}
+.item:first-child{border-top:0;padding-top:0}
+.empty{color:var(--t2);font-size:14px;text-align:center;padding:6px 0}
+details{color:var(--t2);font-size:14px}
+details summary{cursor:pointer;color:var(--t1);font-weight:600}
+details li{margin:6px 0}
+.code{display:flex;gap:10px}
+.code input{flex:1;min-height:56px;border-radius:14px;border:1px solid var(--line);background:#000;color:var(--t1);font-size:28px;text-align:center;letter-spacing:10px;direction:ltr}
+.off{opacity:.45}
+.toast{position:fixed;inset-inline:16px;bottom:calc(18px + env(safe-area-inset-bottom));background:#2c2c30;border-radius:14px;padding:12px 16px;text-align:center;opacity:0;transform:translateY(20px);transition:.25s;pointer-events:none}
+.toast.on{opacity:1;transform:none}
+.ver{color:#55555b;font-size:12px;text-align:center;margin-top:24px}
+</style>
+</head>
+<body>
+<main>
+  <h1>ارسال ویدیو به تلویزیون</h1>
+  <p class="sub">فایل اصلی روی تلویزیون پخش می‌شود – با صدای کامل، بدون آینه‌کردن صفحه.</p>
+
+  <section id="ask" class="card" hidden>
+    <p style="margin-top:0">کد ۴ رقمی روی صفحه تلویزیون (بخش «از گوشی») را وارد کنید:</p>
+    <form class="code" id="codeForm"><input id="codeIn" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"><button class="b p" style="flex:0 0 96px">ادامه</button></form>
+  </section>
+
+  <div id="app" hidden>
+    <section class="card">
+      <label class="pick" id="pickBtn">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
+        <span>انتخاب ویدیو</span>
+        <input type="file" id="file" accept="video/*,audio/*,.mp4,.mov,.mkv,.webm,.m4v" multiple>
+      </label>
+      <label class="sw"><input type="checkbox" id="auto" checked> بلافاصله روی تلویزیون پخش شود</label>
+    </section>
+
+    <section id="upCard" class="card" hidden></section>
+
+    <section class="card">
+      <div class="remote">
+        <button data-a="back">⏪<small>۱۰ ثانیه</small></button>
+        <button data-a="toggle">⏯<small>پخش/مکث</small></button>
+        <button data-a="fwd">⏩<small>۱۰ ثانیه</small></button>
+        <button data-a="stop">⏹<small>بستن</small></button>
+      </div>
+    </section>
+
+    <h2>روی تلویزیون</h2>
+    <section class="card" id="list"><div class="empty">هنوز ویدیویی ارسال نشده.</div></section>
+
+    <details class="card">
+      <summary>ویدیو از تلگرام؟</summary>
+      <ul>
+        <li><b>اندروید:</b> ویدیو را در تلگرام باز کنید ← منوی ⋮ ← «ذخیره در گالری» (Save to Gallery). بعد همین‌جا «انتخاب ویدیو».</li>
+        <li><b>آیفون:</b> ویدیو را باز کنید ← دکمه اشتراک‌گذاری ← «Save to Files» (کیفیت اصلی) یا «Save Video». بعد «انتخاب ویدیو» ← Browse/Files یا Photo Library.</li>
+        <li>گوشی و تلویزیون باید به یک وای‌فای وصل باشند. تا پایان ارسال این صفحه را باز نگه دارید؛ اگر قطع شد، از همان‌جا ادامه می‌دهد.</li>
+        <li>پخش از چند ثانیه بعد از شروع ارسال آغاز می‌شود (ویدیوهای تلگرام). بقیه ویدیوها بعد از پایان ارسال پخش می‌شوند.</li>
+      </ul>
+    </details>
+    <div class="ver">30nama · __VER__</div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+  var CODE = '__CODE__', $ = function (id) { return document.getElementById(id); };
+  var fa = function (n) { try { return Number(n).toLocaleString('fa-IR'); } catch (e) { return String(n); } };
+  function toast(m) { var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('on'); }, 2600); }
+  if (!CODE) {
+    $('ask').hidden = false;
+    $('codeForm').onsubmit = function (e) { e.preventDefault(); var v = $('codeIn').value.replace(/\D/g, ''); if (v.length === 4) location.href = '/' + v; };
+    return;
+  }
+  $('app').hidden = false;
+  try { var a0 = localStorage.getItem('n30auto'); if (a0 !== null) $('auto').checked = a0 === '1'; } catch (e) {}
+  $('auto').onchange = function () { try { localStorage.setItem('n30auto', $('auto').checked ? '1' : '0'); } catch (e) {} };
+
+  function mb(b) { var m = b / 1048576; return m >= 1000 ? fa((m / 1024).toFixed(1)) + ' گیگابایت' : fa(m < 10 ? m.toFixed(1) : Math.round(m)) + ' مگابایت'; }
+  function req(method, url, cb, body) {
+    var x = new XMLHttpRequest();
+    x.open(method, url + (url.indexOf('?') < 0 ? '?' : '&') + 'k=' + CODE);
+    x.timeout = 15000;
+    x.onload = function () { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} cb && cb(x.status, j); };
+    x.onerror = x.ontimeout = function () { cb && cb(0, null); };
+    x.send(body || null);
+    return x;
+  }
+
+  /* ---------- upload queue (one at a time, resumable) ---------- */
+  var queue = [], cur = null, known = [];
+  function bare(n) { return String(n || '').replace(/\.[a-z0-9]{2,4}$/i, ''); }
+  // the same file picked again continues its unfinished upload instead of starting over
+  function idFor(f) { for (var i = 0; i < known.length; i++) if (!known[i].done && known[i].name === f.name && known[i].size === f.size) return known[i].id; return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  $('file').onchange = function () {
+    var fs = $('file').files;
+    for (var i = 0; i < fs.length; i++) queue.push({ f: fs[i], id: idFor(fs[i]), auto: $('auto').checked && i === 0 && !cur });
+    $('file').value = '';
+    next();
+  };
+  function next() {
+    if (cur || !queue.length) return;
+    cur = queue.shift(); cur.tries = 0; cur.t0 = Date.now(); cur.b0 = 0;
+    var u = cur; req('GET', '/api/up/' + u.id, function (st, j) { u.b0 = st === 200 && j && !j.gone ? j.recv || 0 : 0; send(u.b0); });
+  }
+  function card() {
+    var c = $('upCard'), u = cur; if (!u) return;
+    c.hidden = false; c.className = 'card' + (u.done ? ' done' : '');
+    var pct = u.f.size ? Math.min(100, Math.floor(u.sent * 100 / u.f.size)) : 0, info;
+    if (u.err) info = '<span class="err">' + u.err + '</span>';
+    else if (u.done) info = 'ارسال شد' + (u.auto ? ' · روی تلویزیون پخش می‌شود' : '');
+    else {
+      var sec = (Date.now() - u.t0) / 1000, rate = sec > 1 ? (u.sent - u.b0) / sec : 0, left = rate > 0 ? Math.ceil((u.f.size - u.sent) / rate) : 0;
+      info = fa(pct) + '٪ · ' + mb(u.sent) + ' از ' + mb(u.f.size) + (rate > 0 ? ' · ' + mb(rate) + '/ثانیه' : '') + (left > 0 ? ' · ' + (left > 90 ? fa(Math.ceil(left / 60)) + ' دقیقه' : fa(left) + ' ثانیه') + ' مانده' : '');
+      if (u.retrying) info = 'اتصال قطع شد – ادامه ارسال…';
+    }
+    c.innerHTML = '<div class="nm"></div><div class="bar"><i style="width:' + pct + '%"></i></div><div class="meta">' + info + (queue.length ? ' · ' + fa(queue.length) + ' فایل در صف' : '') + '</div>';
+    c.querySelector('.nm').textContent = bare(u.f.name);
+  }
+  function send(off) {
+    var u = cur; u.sent = off; u.retrying = false; card();
+    var x = new XMLHttpRequest();
+    x.open('POST', '/api/up/' + u.id + '?k=' + CODE + '&off=' + off + '&size=' + u.f.size + '&auto=' + (u.auto ? 1 : 0) +
+      '&name=' + encodeURIComponent(u.f.name || 'video.mp4') + '&type=' + encodeURIComponent(u.f.type || ''));
+    x.upload.onprogress = function (e) { u.sent = off + e.loaded; if (!u.shown || Date.now() - u.shown > 400) { u.shown = Date.now(); card(); } };
+    x.onload = function () {
+      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 200 && j && j.done) { u.done = true; u.sent = u.f.size; card(); refresh(); setTimeout(function () { cur = null; next(); if (!cur) card(); }, 600); return; }
+      if (x.status === 409 && j) return send(j.recv || 0);
+      if (x.status === 507) { u.err = j && j.err === 'space' ? 'حافظه تلویزیون پر است – ویدیوهای قبلی را حذف کنید.' : 'خطا در ذخیره روی تلویزیون.'; card(); cur = null; next(); return; }
+      if (x.status === 403) { u.err = 'کد اشتباه است – QR را دوباره اسکن کنید.'; card(); return; }
+      retry();
+    };
+    x.onerror = retry;
+    x.send(u.f.slice(off));
+  }
+  function retry() {
+    var u = cur; if (!u) return;
+    if (++u.tries > 40) { u.err = 'ارسال ناموفق بود. تلویزیون و ۳۰نما روشن است؟'; card(); cur = null; next(); return; }
+    u.retrying = true; card();
+    setTimeout(function () {
+      if (document.hidden) { document.addEventListener('visibilitychange', function w() { if (!document.hidden) { document.removeEventListener('visibilitychange', w); retry0(); } }); return; }
+      retry0();
+    }, Math.min(10000, 1500 * u.tries));
+    function retry0() { req('GET', '/api/up/' + u.id, function (st, j) { if (st === 200 && j) send(j.gone ? 0 : (j.recv || 0)); else retry(); }); }
+  }
+  window.addEventListener('beforeunload', function (e) { if (cur && !cur.done) { e.preventDefault(); e.returnValue = ''; } });
+
+  /* ---------- remote ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.remote button'), function (b) {
+    b.onclick = function () { req('POST', '/api/ctl?a=' + b.getAttribute('data-a'), function (st) { if (st !== 200) toast('تلویزیون پاسخ نداد'); }); };
+  });
+
+  /* ---------- list of videos on the TV ---------- */
+  function refresh() {
+    req('GET', '/api/state', function (st, j) {
+      if (st !== 200 || !j) return;
+      known = j.items;
+      var box = $('list'); box.innerHTML = '';
+      if (!j.items.length) { box.innerHTML = '<div class="empty">هنوز ویدیویی ارسال نشده.</div>'; return; }
+      j.items.forEach(function (it) {
+        var d = document.createElement('div'); d.className = 'item';
+        var pct = it.size ? Math.floor(it.recv * 100 / it.size) : 0;
+        var s = it.done ? mb(it.size) : (it.busy ? 'در حال ارسال · ' + fa(pct) + '٪' : 'ناتمام · ' + fa(pct) + '٪ – همان فایل را دوباره انتخاب کنید تا ادامه دهد');
+        if (j.play && j.play.id === it.id) s += ' · آخرین پخش';
+        d.innerHTML = '<div class="nm"></div><div class="meta">' + s + '</div><div class="btns"><button class="b p">▶ پخش روی تلویزیون</button><button class="b d">حذف</button></div>';
+        d.querySelector('.nm').textContent = bare(it.name);
+        var pb = d.querySelector('.p'); if (!it.ready) pb.classList.add('off');
+        pb.onclick = function () { req('POST', '/api/play/' + it.id, function (s2, r) { toast(s2 === 200 ? (r && r.ready ? 'روی تلویزیون پخش می‌شود' : 'بعد از ارسال پخش می‌شود') : 'تلویزیون پاسخ نداد'); }); };
+        d.querySelector('.d').onclick = function () { if (confirm('این ویدیو از تلویزیون حذف شود؟')) req('POST', '/api/del/' + it.id, refresh); };
+        box.appendChild(d);
+      });
+    });
+  }
+  refresh(); setInterval(function () { if (!document.hidden) refresh(); }, 4000);
+})();
+</script>
+</body>
+</html>

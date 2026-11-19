@@ -1,0 +1,39 @@
+/* "From phone" screen (screens/phone.js): steps + QR on top, received videos as a row of tiles below. */
+.ph{position:absolute;left:0;top:0;width:1920px;height:1080px}
+.ph-h{position:absolute;top:60px;inset-inline-start:90px;font-size:57px;font-weight:700;line-height:var(--lh-title);white-space:nowrap}
+.ph-info{position:absolute;top:168px;inset-inline-start:90px;width:1060px}
+.ph-sub{font-size:31px;line-height:var(--lh-body);color:var(--label-2)}
+.ph-steps{list-style:none;margin:40px 0 0;padding:0}
+.ph-steps li{display:flex;align-items:center;min-height:72px;margin-bottom:14px;font-size:33px;font-weight:600;line-height:44px}
+.ph-steps b{flex:none;width:56px;height:56px;border-radius:50%;background:var(--brand);color:#000;display:flex;align-items:center;justify-content:center;font-size:29px;font-weight:700;margin-inline-end:24px}
+.ph-tip{margin-top:22px;font-size:25px;line-height:var(--lh-body);color:var(--label-3)}
+/* QR column (end side) */
+.ph-qr{position:absolute;top:140px;inset-inline-end:120px;width:420px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.ph-qr .qr{width:360px;height:360px;padding:24px;border-radius:32px;background:#e6e6e6;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+.ph-qr .qr svg{display:block;width:312px;height:312px}
+.ph-qr .qr svg rect{fill:transparent}
+.ph-qr .qr svg path{fill:#141414}
+.ph-qr .noip{height:312px;display:flex;align-items:center;justify-content:center;color:#141414;font-size:29px;font-weight:700;line-height:var(--lh-head)}
+.ph-qr .url{margin-top:16px;font-size:27px;line-height:40px;font-weight:600;font-family:Vz,sans-serif;letter-spacing:.5px}
+.ph-qr .code{font-size:25px;line-height:34px;color:var(--label-2)}
+.ph-qr .btn{margin-top:16px}
+/* received videos */
+.ph-lh{position:absolute;top:714px;inset-inline-start:90px;font-size:31px;font-weight:700;line-height:44px;color:var(--label-2)}
+.ph-row{position:absolute;top:776px;inset-inline-start:90px;display:flex;column-gap:32px;white-space:nowrap;transition:transform var(--d-move) var(--e-move)}
+.ph-row .none{font-size:27px;line-height:44px;color:var(--label-3)}
+.ph-tile{flex:none;width:360px;height:280px;text-align:start;color:var(--label-1)}
+.ph-tile .art{position:relative;width:360px;height:203px;border-radius:20px;background:var(--fill-2);display:flex;align-items:center;justify-content:center;transition:transform var(--d-focus-out) var(--e-unfocus),box-shadow var(--d-focus-out)}
+.ph-tile .art .ico{width:64px;height:64px;stroke-width:1.4;color:var(--label-1)}
+.ph-tile.dim .art .ico{opacity:.45}
+.ph-tile .bar{position:absolute;inset-inline-start:20px;inset-inline-end:20px;bottom:20px;height:6px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.ph-tile .bar i{display:block;height:100%;background:var(--brand);transform-origin:0 50%;transform:scaleX(0);transition:transform 400ms linear}
+[dir=rtl] .ph-tile .bar i{transform-origin:100% 50%}
+.ph-tile .cap{padding:14px 6px 0}
+.ph-tile .nm{font-size:27px;line-height:38px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-tile .meta{font-size:23px;line-height:32px;color:var(--label-2)}
+.ph-tile.focus .art{background:var(--fill-1);box-shadow:0 0 0 6px #fff;transform:scale(1.05);transition:transform var(--d-focus-in) var(--e-focus),box-shadow var(--d-focus-in)}
+/* service missing */
+.ph-msg{position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 300px}
+.ph-msg>.ico{width:96px;height:96px;color:var(--label-3);stroke-width:1.2;margin-bottom:32px}
+.ph-msg .et{font-size:38px;line-height:var(--lh-head);font-weight:700}
+.ph-msg .eb{margin-top:12px;max-width:1100px;font-size:29px;line-height:var(--lh-body);color:var(--label-2)}

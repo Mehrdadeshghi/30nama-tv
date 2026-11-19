@@ -7,6 +7,7 @@
     ['search', 'search', function () { N.go('search', {}, { reset: true }); }, 240],
     ['home', 'home', function () { N.go('home', {}, { reset: true }); }, 312],
     ['live', 'live', function () { N.go('live', {}, { reset: true }); }, 384], // Live TV (screens/live.js, fork addition)
+    ['phone', 'phone', function () { N.go('phone', {}, { reset: true }); }, 0], // videos sent from a phone (screens/phone.js, TizenBrew service)
     ['progress', 'progress', function () { N.go('progress', {}, { reset: true }); }, 456], // In progress (screens/progress.js)
     ['movies', 'movies', function () { N.go('browse', { type: 'movie', nameKey: 'movies' }, { reset: true }); }, 528],
     ['series', 'series', function () { N.go('browse', { type: 'series', nameKey: 'series' }, { reset: true }); }, 600],
@@ -66,9 +67,17 @@
     var logo = el('img', 'rail-logo'); logo.alt = ''; logo.src = 'img/logo.png'; panel.appendChild(logo);
     rail.pill = el('div', 'rail-pill'); panel.appendChild(rail.pill); // below the items in z-order
     panel.appendChild(el('div', 'rail-sep'));
-    var list = [PROF].concat(RAIL.filter(function (m) { return m[0] !== 'watchlist' || N.isLoggedIn(); }));
+    var list = [PROF].concat(RAIL.filter(function (m) {
+      if (m[0] === 'watchlist') return N.isLoggedIn();
+      if (m[0] === 'phone') return !!(N.phone && N.phone.available());
+      return true;
+    }));
+    // rows from y 240, 72 apart, Settings set off below; squeezed when the list would run past the panel (ends ~1000)
+    var n = list.length - 1, step = 72, gap = 24;
+    if (240 + (n - 1) * step + gap + 72 > 1000) { gap = 12; step = Math.floor((1000 - 240 - 72 - gap) / (n - 1)); }
     list.forEach(function (m, i) {
-      var b = el('button', 'ri ' + m[0]); b._key = m[0]; b._y = m[3]; b.style.top = b._y + 'px';
+      var y = m[0] === 'prof' ? m[3] : 240 + (i - 1) * step + (m[0] === 'settings' ? gap : 0);
+      var b = el('button', 'ri ' + m[0]); b._key = m[0]; b._y = y; b.style.top = b._y + 'px';
       if (m[0] === 'prof') profRow(b);
       else { b.appendChild(N.ui.icon(m[1])); b.appendChild(el('span', 'lb', N.t(m[0]))); }
       b.onenter = function () { rail.go(m); };

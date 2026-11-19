@@ -74,6 +74,20 @@ automatically and the stream that worked remembered per channel.
 - IRIB channels (Telewebion) need the small Cloudflare Worker in `tools/telewebion-worker/` on Samsung TVs, because AVPlay
   cannot read Telewebion's 16-digit media sequence. Put its address in `liveProxy` in `tizen-app/js/config.js`.
 
+## Videos from the phone (fork addition, Samsung + TizenBrew)
+
+Sidebar → **از گوشی / From phone**. The TV shows a QR code; the phone opens a small page, picks a video (e.g. one saved
+from Telegram) and sends it over the home Wi-Fi. The TV plays the **original file** with its own player – full picture and
+sound, unlike screen mirroring. Telegram videos (index at the front, "fast start") begin after ~3 MB, the rest when the
+transfer is done. A broken transfer continues where it stopped; the phone page also has pause / ±10 s / close buttons.
+
+How: `package.json` declares `serviceFile` (`tizen-app/service/phone.js`), which TizenBrew runs in its Node service when
+the module starts. It listens on port 8030, keeps the newest 4 videos in TizenBrew's data folder and serves them to AVPlay
+with Range support, also while they are still arriving. Phones need the 4-digit code from the TV (in the QR). Sources:
+`tizen-app/service/src/` (built by `tools/build-service.js`), tests: `tools/service-test.js` and the e2e `phone:` scenarios.
+After the first update TizenBrew has to start once more (hold the remote's power button until the TV restarts) so it
+picks up the new `serviceFile`.
+
 ## LG webOS (fork addition)
 
 The same app also runs on LG TVs (webOS). `webos/build.sh` packages `tizen-app/` with an `appinfo.json` and a small

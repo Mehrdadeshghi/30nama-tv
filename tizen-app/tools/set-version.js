@@ -14,3 +14,5 @@ edit(path.join(APP, 'js', 'config.js'), /(appVersion:\s*')[^']*(')/, '$1' + ver 
 edit(path.join(APP, 'config.xml'), /(<widget [^>]*version=")[^"]*(")/, '$1' + ver + '$2');
 edit(path.join(ROOT, 'package.json'), /("version":\s*")[^"]*(")/, '$1' + ver + '$2');
 console.log('version ' + ver);
+// the phone service carries the version too (shown on the phone page)
+require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'build-service.js')], { stdio: 'inherit' });

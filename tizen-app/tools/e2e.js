@@ -177,6 +177,39 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
       await pg.screenshot({ path: process.env.SHOTS + '/err-' + lang + '.png' });
       await pg.context().close();
     }
+    // phone feature: TV screen (fa + en, with a finished and a half video), sidebar, and the phone page
+    var vm = require('vm'), fs = require('fs'), os = require('os'), http = require('http');
+    process.env.N30PHONE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'n30shot-'));
+    var sb = {}; Object.getOwnPropertyNames(global).forEach(function (k) { if (k !== 'global' && k !== 'module') sb[k] = global[k]; });
+    sb.require = require; sb.module = { exports: {} };
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'service', 'phone.js'), 'utf8'), vm.createContext(sb));
+    await sleep(300);
+    function up(id, name, n, size) {
+      return new Promise(function (res) {
+        var r = http.request({ host: '127.0.0.1', port: 8030, method: 'POST', path: '/api/up/' + id + '?off=0&size=' + size + '&name=' + encodeURIComponent(name) }, function (s) { s.resume(); s.on('end', res); });
+        r.on('error', res); r.end(Buffer.alloc(n)); if (n < size) setTimeout(function () { r.destroy(); res(); }, 300);
+      });
+    }
+    await up('s1', 'Telegram Video 2026-11-18.mp4', 3000000, 3000000);
+    await up('s2', 'تولد مامان.mp4', 1500000, 4000000);
+    for (var lang2 of ['fa', 'en']) {
+      var pp = await newPage({ lang: lang2 }); await pp.goto(BASE);
+      await waitFor(pp, function () { return N.nav.cur; }, 8000);
+      await pp.evaluate(function () { N.go('phone', {}, { reset: true }); });
+      await waitFor(pp, function () { return document.querySelector('.ph-qr .qr svg') && document.querySelector('.ph-tile'); }, 8000);
+      await pp.evaluate(function () { N.nav.focus(document.querySelector('.ph-tile')); }); await sleep(1800);
+      await pp.screenshot({ path: process.env.SHOTS + '/phone-tv-' + lang2 + '.png' });
+      if (lang2 === 'fa') { await pp.evaluate(function () { N.rail.enter(); }); await sleep(700); await pp.screenshot({ path: process.env.SHOTS + '/phone-rail-fa.png' }); }
+      await pp.context().close();
+    }
+    var code = await new Promise(function (res) { http.get('http://127.0.0.1:8030/api/state', function (s) { var b = ''; s.on('data', function (d) { b += d; }); s.on('end', function () { res(JSON.parse(b).code); }); }); });
+    var mctx = await browser.newContext(Object.assign({}, pw.devices['iPhone 13']));
+    var mp = await mctx.newPage(); await mp.goto('http://127.0.0.1:8030/' + code); await sleep(800);
+    await mp.screenshot({ path: process.env.SHOTS + '/phone-page.png', fullPage: true });
+    await mp.goto('http://127.0.0.1:8030/'); await sleep(300);
+    await mp.screenshot({ path: process.env.SHOTS + '/phone-code.png' });
+    await mctx.close();
+    try { process.__n30phone.server.close(); } catch (e) {}
     await browser.close(); server.kill(); process.exit(0);
   }
 
@@ -473,6 +506,67 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     await page.key('Escape');
     var s = await page.state(), modal = await page.evaluate(function () { return !!document.querySelector('.modal'); });
     ok(!s.railOpen && !modal, 'rail open ' + s.railOpen + ', exit dialog ' + modal);
+    return page;
+  });
+
+  await test('phone: a video sent from the phone plays on the TV, the phone remote controls it', async function (np) {
+    // the real service (service/phone.js) in a TizenBrew-like sandbox on 127.0.0.1:8030, data in a temp folder
+    var vm = require('vm'), fs = require('fs'), os = require('os'), http = require('http');
+    process.env.N30PHONE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'n30e2e-'));
+    var sb = {}; Object.getOwnPropertyNames(global).forEach(function (k) { if (k !== 'global' && k !== 'module') sb[k] = global[k]; });
+    sb.require = require; sb.module = { exports: {} };
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'service', 'phone.js'), 'utf8'), vm.createContext(sb));
+    function call(method, p, body, lan) {
+      return new Promise(function (res) {
+        var r = http.request({ host: '127.0.0.1', port: 8030, method: method, path: p, localAddress: lan ? '127.0.0.2' : undefined }, function (s) {
+          var b = []; s.on('data', function (d) { b.push(d); }); s.on('end', function () { var j = null; try { j = JSON.parse(Buffer.concat(b)); } catch (e) {} res({ st: s.statusCode, j: j }); });
+        });
+        r.on('error', function () { res({ st: 0 }); });
+        if (body) { var i = 0; (function pump() { if (i >= body.length) return r.end(); r.write(body.slice(i, i + 131072)); i += 131072; setTimeout(pump, 30); })(); } else r.end();
+      });
+    }
+    try {
+      await sleep(300);
+      var page = await np({ lang: 'fa' });
+      await page.goto(BASE);
+      await waitFor(page, function () { return N.nav.cur; }, 8000);
+      await page.evaluate(function () { N.go('phone', {}, { reset: true }); });
+      var code = (await call('GET', '/api/state')).j.code;
+      await waitFor(page, function () { return document.querySelector('.ph-qr .qr svg') && /\d{4}/.test(document.querySelector('.ph-qr .code').textContent); }, 8000, 'QR with code');
+      var shown = await page.evaluate(function () { return document.querySelector('.ph-qr .url').textContent; });
+      ok(shown.slice(-4) === code, 'QR address ends with the code: ' + shown);
+      ok(await page.evaluate(function () { return !!document.querySelector('.rail-panel .ri.phone') || !!N.rail.items.filter(function (b) { return b._key === 'phone'; }).length; }), 'sidebar has the phone entry');
+      // a fast-start "video" (box headers only; the fake AVPlay does not decode)
+      function bx(t, n) { var b = Buffer.alloc(n); b.writeUInt32BE(n, 0); b.write(t, 4, 'ascii'); return b; }
+      var vid = Buffer.concat([bx('ftyp', 32), bx('moov', 20000), bx('mdat', 6000000)]);
+      var up = call('POST', '/api/up/e2e1?k=' + code + '&off=0&auto=1&size=' + vid.length + '&name=' + encodeURIComponent('ویدیو تلگرام.mp4'), vid, true);
+      await waitFor(page, function () { return N.player.open && /\/v\/e2e1\.mp4$/.test(window.__av.url || ''); }, 10000, 'player plays the phone video');
+      ok(await page.evaluate(function () { return document.getElementById('osd-title').textContent; }) === 'ویدیو تلگرام', 'title from the file name');
+      await call('POST', '/api/ctl?a=toggle&k=' + code, null, true);
+      await waitFor(page, function () { return !window.__av.playing; }, 5000, 'paused from the phone');
+      await call('POST', '/api/ctl?a=stop&k=' + code, null, true);
+      await waitFor(page, function () { return !N.player.open; }, 5000, 'closed from the phone');
+      await up;
+      await waitFor(page, function () { var t = document.querySelector('.ph-tile'); return t && /MB/.test(t.textContent); }, 6000, 'tile for the finished video');
+      ok(await page.evaluate(function () { return JSON.stringify(localStorage).indexOf('phone:e2e1') < 0; }), 'phone video kept out of 30nama progress');
+      // OK on the tile plays it again (own saved spot, nothing reported to 30nama)
+      await page.evaluate(function () { N.nav.focus(document.querySelector('.ph-tile')); });
+      await page.key('Enter');
+      await waitFor(page, function () { return N.player.open; }, 5000, 'tile plays');
+      await closePlayer(page);
+      ok(!FAKE.calls.some(function (c) { return c.name === 'observer'; }), 'no observer report for a phone video');
+      return page;
+    } finally { try { process.__n30phone.server.close(); } catch (e) {} }
+  });
+
+  await test('phone: without the service the screen explains what to do', async function (np) {
+    var page = await np();
+    await page.goto(BASE);
+    await waitFor(page, function () { return N.nav.cur; }, 8000);
+    await page.evaluate(function () { N.config.phoneBase = 'http://127.0.0.1:9'; N.go('phone', {}, { reset: true }); });
+    await waitFor(page, function () { var m = document.querySelector('.ph-msg'); return m && !m.classList.contains('hidden'); }, 8000, 'service message');
+    await page.key('ArrowLeft');
+    ok((await page.state()).railOpen, 'arrow opens the sidebar');
     return page;
   });
 
