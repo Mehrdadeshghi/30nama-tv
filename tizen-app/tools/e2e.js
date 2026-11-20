@@ -559,12 +559,49 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     } finally { try { process.__n30phone.server.close(); } catch (e) {} }
   });
 
+  await test('phone: service not started -> the app asks TizenBrew (WebSocket) to start it', async function (np) {
+    // a tiny stand-in for TizenBrew's WebSocket server (same JSON messages: 7 GetServiceStatuses, 6 StartService)
+    var http = require('http'), crypto = require('crypto'), vm = require('vm'), fs = require('fs'), os = require('os'), got = [];
+    function frame(str) { var b = Buffer.from(str), h = b.length < 126 ? Buffer.from([0x81, b.length]) : Buffer.from([0x81, 126, b.length >> 8, b.length & 255]); return Buffer.concat([h, b]); }
+    var tb = http.createServer();
+    tb.on('upgrade', function (req, sock) {
+      var key = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+      sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + key + '\r\n\r\n');
+      sock.on('data', function (d) {
+        if ((d[0] & 15) !== 1) return;
+        var len = d[1] & 127, off = 2; if (len === 126) { len = d.readUInt16BE(2); off = 4; }
+        var mask = d.slice(off, off + 4), body = Buffer.alloc(len); for (var i = 0; i < len; i++) body[i] = d[off + 4 + i] ^ mask[i % 4];
+        var m = JSON.parse(body.toString()); got.push(m);
+        if (m.type === 7) sock.write(frame(JSON.stringify({ type: 7, payload: [{ name: 'wsConn' }] })));
+        if (m.type === 6) {   // what TizenBrew's serviceLauncher does: run the serviceFile in a sandbox
+          process.env.N30PHONE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'n30tb-'));
+          var sb = {}; Object.getOwnPropertyNames(global).forEach(function (k) { if (k !== 'global' && k !== 'module') sb[k] = global[k]; });
+          sb.require = require; sb.module = { exports: {} };
+          vm.runInContext(fs.readFileSync(path.join(__dirname, '..', '..', m.payload.serviceFile), 'utf8'), vm.createContext(sb));
+        }
+      });
+      sock.on('error', function () {});
+    });
+    await new Promise(function (r) { tb.listen(8099, '127.0.0.1', r); });
+    try {
+      var page = await np();
+      await page.goto(BASE);
+      await waitFor(page, function () { return N.nav.cur; }, 8000);
+      await page.evaluate(function () { N.config.tbModule = 'gh/Mehrdadeshghi/30nama-tv'; N.config.tbWs = 'ws://127.0.0.1:8099'; N.phone.fails = 0; N.go('phone', {}, { reset: true }); });
+      await waitFor(page, function () { return document.querySelector('.ph-qr .qr svg') && !document.querySelector('.ph-qr').classList.contains('hidden'); }, 25000, 'service started via TizenBrew, QR shown');
+      var start = got.filter(function (m) { return m.type === 6; })[0];
+      ok(got[0] && got[0].type === 7 && start && start.payload.fullName === 'gh/Mehrdadeshghi/30nama-tv' && start.payload.serviceFile === 'tizen-app/service/phone.js', 'asked for statuses, then StartService with the module and serviceFile');
+      return page;
+    } finally { tb.close(); try { process.__n30phone.server.close(); } catch (e) {} }
+  });
+
   await test('phone: without the service the screen explains what to do', async function (np) {
     var page = await np();
     await page.goto(BASE);
     await waitFor(page, function () { return N.nav.cur; }, 8000);
     await page.evaluate(function () { N.config.phoneBase = 'http://127.0.0.1:9'; N.go('phone', {}, { reset: true }); });
     await waitFor(page, function () { var m = document.querySelector('.ph-msg'); return m && !m.classList.contains('hidden'); }, 8000, 'service message');
+    ok(await page.evaluate(function () { return /TizenBrew: /.test(document.querySelector('.ph-msg .dg').textContent) && N.nav.cur === document.querySelector('.ph-msg .btn'); }), 'diagnostic line and focused retry button');
     await page.key('ArrowLeft');
     ok((await page.state()).railOpen, 'arrow opens the sidebar');
     return page;

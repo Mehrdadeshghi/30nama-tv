@@ -15,7 +15,7 @@
       phCode: 'Code {c}', phNewCode: 'New code', phOnTv: 'On this TV', phNone: 'Nothing sent yet.', phPlay: 'Play', phDel: 'Delete',
       phRecv: 'Receiving {p}%', phHalf: 'Incomplete ({p}%)', phNoSvc: 'The phone service is not running.',
       phNoSvcSub: 'Restart TizenBrew once (hold the remote’s power button until the TV restarts), then open 30nama again.',
-      phNoNet: 'The TV has no network address.', phWait: 'Waiting for the video…', phDelQ: 'Delete this video from the TV?', phGone: 'This video is no longer on the TV.'
+      phNoNet: 'The TV has no network address.', phNoStore: 'No storage on the TV for videos was found.', phStarting: 'Asked TizenBrew to start the service – this takes a few seconds. If it stays like this, restart the TV (hold the power button) and send a photo of this screen.', phWait: 'Waiting for the video…', phDelQ: 'Delete this video from the TV?', phGone: 'This video is no longer on the TV.'
     },
     fa: {
       phone: 'از گوشی', phTitle: 'ویدیو از گوشی', phSub: 'ویدیوهای تلگرام یا گالری با فایل اصلی اینجا پخش می‌شوند – تصویر و صدای کامل، بدون آینه‌کردن صفحه.',
@@ -24,14 +24,56 @@
       phCode: 'کد {c}', phNewCode: 'کد جدید', phOnTv: 'روی تلویزیون', phNone: 'هنوز ویدیویی ارسال نشده.', phPlay: 'پخش', phDel: 'حذف',
       phRecv: 'در حال دریافت {p}٪', phHalf: 'ناتمام ({p}٪)', phNoSvc: 'سرویس ارسال از گوشی فعال نیست.',
       phNoSvcSub: 'یک بار TizenBrew را از نو اجرا کنید (دکمه پاور ریموت را نگه دارید تا تلویزیون ری‌استارت شود) و دوباره سی‌نما را باز کنید.',
-      phNoNet: 'تلویزیون آدرس شبکه ندارد.', phWait: 'در انتظار ویدیو…', phDelQ: 'این ویدیو از تلویزیون حذف شود؟', phGone: 'این ویدیو دیگر روی تلویزیون نیست.'
+      phNoNet: 'تلویزیون آدرس شبکه ندارد.', phNoStore: 'جایی برای ذخیره ویدیو روی تلویزیون پیدا نشد.', phStarting: 'از TizenBrew خواسته شد سرویس را اجرا کند – چند ثانیه طول می‌کشد. اگر همین‌طور ماند، تلویزیون را ری‌استارت کنید و از این صفحه عکس بفرستید.', phWait: 'در انتظار ویدیو…', phDelQ: 'این ویدیو از تلویزیون حذف شود؟', phGone: 'این ویدیو دیگر روی تلویزیون نیست.'
     }
   });
 
   /* ---------------- background link to the service ---------------- */
   var PH = N.phone = { state: null, ok: false, fails: 0, lastPlay: -1, lastCtl: -1, subs: [], t: null };
   PH.available = function () { return N.platform !== 'webos' && !window.AndroidBridge; };
-  PH.base = function () { return N.config.phoneBase || 'http://127.0.0.1:8030'; };
+  // the service takes 8030, or the next free one of these (service/src/server.js); the app looks on each in turn
+  PH.ports = [8030, 8031, 8032, 8034]; PH.pi = 0;
+  PH.base = function () { return N.config.phoneBase || 'http://127.0.0.1:' + PH.ports[PH.pi]; };
+
+  /* TizenBrew starts the service when it launches the module. If that did not happen (old module data in TizenBrew,
+     a crash), ask TizenBrew directly over its own WebSocket (the page itself comes from TizenBrew on 127.0.0.1:8081):
+     GetServiceStatuses (7), then StartService (6) for this module. PH.diag keeps what happened, shown on the screen. */
+  PH.diag = { tb: '', svc: '', err: '', kicks: 0, at: 0 };
+  function moduleName() {
+    if (N.config.tbModule) return N.config.tbModule;     // tests
+    var m = /\/module\/([^\/]+)\//.exec(location.pathname || '');
+    if (m) { try { return decodeURIComponent(m[1]); } catch (e) {} }
+    return '';
+  }
+  PH.kick = function (force) {
+    var name = moduleName(), d = PH.diag;
+    if (!name || !window.WebSocket) { d.tb = 'none'; return; }
+    if (!force && (d.kicks >= 3 || Date.now() - d.at < 30000)) return;
+    d.kicks++; d.at = Date.now();
+    var ws, done = false, t;
+    function fin() { if (done) return; done = true; clearTimeout(t); try { ws.close(); } catch (e) {} notify(); setTimeout(PH.poll, 2500); }
+    try { ws = new WebSocket(N.config.tbWs || 'ws://127.0.0.1:8081'); } catch (e) { d.tb = 'noconn'; notify(); return; }
+    t = setTimeout(function () { if (!d.svc) d.svc = 'noanswer'; fin(); }, 6000);
+    ws.onerror = function () { if (d.tb !== 'ok') d.tb = 'noconn'; fin(); };
+    ws.onopen = function () { d.tb = 'ok'; try { ws.send(JSON.stringify({ type: 7 })); } catch (e) {} };
+    ws.onmessage = function (ev) {
+      var m = null; try { m = JSON.parse(ev.data); } catch (e) {}
+      if (!m || m.type !== 7 || !m.payload || !m.payload.forEach) return;
+      var me = null; m.payload.forEach(function (x) { if (x && x.name === name) me = x; });
+      d.svc = !me ? 'missing' : (me.hasCrashed ? 'crashed' : 'running');
+      d.err = me && me.error ? String(typeof me.error === 'string' ? me.error : (me.error.message || JSON.stringify(me.error))).slice(0, 160) : '';
+      if (!me || me.hasCrashed) {
+        try { ws.send(JSON.stringify({ type: 6, payload: { fullName: name, name: name.split('/').pop(), serviceFile: 'tizen-app/service/phone.js' } })); d.svc += '>start'; } catch (e) {}
+      }
+      setTimeout(fin, 400);
+    };
+  };
+  function notify() { PH.subs.forEach(function (f) { try { f(PH.ok ? PH.state : null); } catch (e) {} }); }
+  PH.diagText = function () {
+    var d = PH.diag;
+    return 'TizenBrew: ' + (d.tb || '-') + ' · service: ' + (d.svc || '-') + (d.err ? ' (' + d.err + ')' : '') +
+      ' · ports ' + PH.ports.join('/') + ' · app ' + (N.config.appVersion || '');
+  };
   function xhr(method, path, cb) {
     var x = new XMLHttpRequest(), done = false;
     function fin(st, j) { if (done) return; done = true; clearTimeout(t); if (cb) cb(st, j); }
@@ -44,7 +86,7 @@
   PH.call = function (path, cb) { xhr('POST', path, cb); };
   function playingLocal() { return N.player.open && N.player.post && N.player.post.local; }
   function delay() {
-    if (PH.fails >= 3) return 20000;                       // no service here: look again now and then (it may start later)
+    if (PH.fails >= PH.ports.length * 3) return 20000;     // no service here: look again now and then (it may start later)
     if (PH.subs.length || playingLocal()) return 1000;
     return 2500;
   }
@@ -63,8 +105,12 @@
         }
         if (j.play && j.play.n > PH.lastPlay) { PH.lastPlay = j.play.n; var it = PH.find(j.play.id); if (it) PH.play(it); }
         if (j.ctl && j.ctl.n > PH.lastCtl) { PH.lastCtl = j.ctl.n; if (j.now - j.ctl.t < 15000) control(j.ctl.a); }
-      } else { PH.ok = false; PH.fails++; }
-      PH.subs.forEach(function (f) { try { f(PH.ok ? PH.state : null); } catch (e) {} });
+      } else {
+        PH.ok = false; PH.fails++;
+        if (!N.config.phoneBase) PH.pi = (PH.pi + 1) % PH.ports.length;
+        if (PH.fails >= PH.ports.length) PH.kick();        // nothing on any port: have TizenBrew start the service
+      }
+      notify();
       schedule();
     });
   };
@@ -186,11 +232,19 @@
     }
     function render(st) {
       if (dead) return;
-      if (!st) {
+      if (!st || st.storage === false) {
         side.classList.add('hidden'); listH.classList.add('hidden'); row.classList.add('hidden'); info.classList.add('hidden');
+        var hadMsg = N.nav.cur && msg.contains(N.nav.cur);
         msg.classList.remove('hidden'); msg.innerHTML = '';
-        msg.appendChild(ui.icon('phone')); msg.appendChild(el('div', 'et', N.t('phNoSvc'))); msg.appendChild(el('div', 'eb', N.t('phNoSvcSub')));
-        if (N.nav.cur && root.contains(N.nav.cur)) N.nav.clear();
+        msg.appendChild(ui.icon('phone'));
+        msg.appendChild(el('div', 'et', N.t(st ? 'phNoStore' : 'phNoSvc')));
+        if (!st) msg.appendChild(el('div', 'eb', N.t(PH.diag.kicks ? 'phStarting' : 'phNoSvcSub')));
+        var dg = el('div', 'dg'); dg.dir = 'ltr'; dg.textContent = PH.diagText(); msg.appendChild(dg);
+        var rb = ui.btn(N.t('retry'), function () { PH.fails = 0; PH.kick(true); PH.poll(); }, '', 'restart');
+        msg.appendChild(rb);
+        if (hadMsg || !N.nav.cur || !document.body.contains(N.nav.cur) || root.contains(N.nav.cur)) {
+          if (!N.rail.open && !document.querySelector('.modal') && !N.player.open) N.nav.focus(rb, true);
+        }
         return;
       }
       side.classList.remove('hidden'); listH.classList.remove('hidden'); row.classList.remove('hidden'); info.classList.remove('hidden'); msg.classList.add('hidden');

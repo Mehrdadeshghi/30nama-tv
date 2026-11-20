@@ -40,6 +40,7 @@
     try { if (typeof tizen !== 'undefined') c.push('/opt/usr/home/owner/apps_rw/' + tizen.application.getAppInfo().packageId + '/data/n30phone'); } catch (e) {}
     c.push('/opt/usr/home/owner/content/Downloads/.n30phone');
     c.push(path.join(os.tmpdir(), 'n30phone'));
+    c.push('/opt/usr/home/owner/share/tmp/n30phone');
     for (var i = 0; i < c.length; i++) {
       try { mkdirs(c[i]); var p = path.join(c[i], '.probe'); fs.writeFileSync(p, 'x'); fs.unlinkSync(p); return c[i]; } catch (e) {}
     }
@@ -256,7 +257,7 @@
   var handle = safe(function (req, res) {
     var url = req.url || '/', p = url.split('?')[0], q = query(url), parts = p.split('/').filter(Boolean), local = isLocal(req);
     if (req.method === 'OPTIONS') { res.writeHead(204, head()); return res.end(); }
-    if (!DIR) return json(res, 500, { err: 'nostorage' });
+    if (!DIR && !(parts[0] === 'api' && parts[1] === 'state')) return json(res, 500, { err: 'nostorage' });
     // phone page: /1234 (also / with ?k=); without the right code a small "enter the code" page
     if (req.method === 'GET' && (parts.length === 0 || (parts.length === 1 && /^\d{4}$/.test(parts[0])))) {
       var ok = (parts[0] && parts[0] === code) || q.k === code, body = new Buffer(PAGE.replace(/__CODE__/g, ok ? code : '').replace(/__VER__/g, VERSION), 'utf8');
@@ -273,7 +274,7 @@
     if (parts[0] !== 'api') { res.writeHead(404, head()); return res.end(); }
     if (parts[1] === 'state') {
       if (!codeOk(req, q, '')) return json(res, 403, { err: 'code' });
-      var o = { v: VERSION, port: PORT, ip: ip(), items: items.slice().sort(function (a, b) { return b.t - a.t; }).map(pub), play: playReq, ctl: ctlReq, now: Date.now() };
+      var o = { v: VERSION, port: PORT, storage: !!DIR, ip: ip(), items: items.slice().sort(function (a, b) { return b.t - a.t; }).map(pub), play: playReq, ctl: ctlReq, now: Date.now() };
       if (local) { o.code = code; o.dir = DIR; o.log = logs.slice(-20); if (q.free) o.free = freeBytes(); }
       return json(res, 200, o);
     }
@@ -298,10 +299,16 @@
   try {
     if (DIR) load();
     var srv = G.server = http.createServer(handle);
-    srv.on('error', function (e) { log('server error ' + (e.code || e.message)); });
+    // the port may be taken on some TVs: fall back to the next ones (the app looks on all of them)
+    var PORTS = [8030, 8031, 8032, 8034], pi = 0;
+    srv.on('error', function (e) {
+      log('server error ' + (e.code || e.message) + ' on ' + PORT);
+      if (e.code === 'EADDRINUSE' && pi + 1 < PORTS.length) { PORT = PORTS[++pi]; setTimeout(function () { try { srv.listen(PORT, '0.0.0.0'); } catch (x) { log('listen ' + x.message); } }, 200); }
+    });
+    srv.on('listening', function () { log('listening on ' + PORT + ' (' + (DIR || 'no storage') + ')'); });
     srv.on('clientError', function (e, sock) { try { sock.destroy(); } catch (x) {} });
     srv.timeout = 0;                       // uploads and paused streams may idle for minutes
-    srv.listen(PORT, '0.0.0.0', function () { log('listening on ' + PORT + ' (' + (DIR || 'no storage') + ')'); });
+    srv.listen(PORT, '0.0.0.0');
     G.stop = function () { items.forEach(function (it) { if (it.req) { try { it.req.destroy(); } catch (e) {} } }); };
   } catch (e) { log('start failed ' + (e && e.message)); }
 })();
