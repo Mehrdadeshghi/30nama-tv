@@ -28,7 +28,7 @@ h1{font-size:22px;margin:4px 0 2px}
 button.b{flex:1;min-height:46px;border-radius:12px;border:0;background:var(--line);color:var(--t1);font:inherit;font-weight:600;cursor:pointer}
 button.b.p{background:var(--t1);color:#000}
 button.b.d{flex:0 0 auto;padding:0 16px;color:var(--bad)}
-.remote{direction:ltr;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.remote{direction:ltr;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .remote button{min-height:56px;border-radius:14px;border:0;background:var(--line);color:var(--t1);font-size:20px;cursor:pointer}
 .remote button small{display:block;font-size:11px;color:var(--t2)}
 h2{font-size:16px;margin:22px 4px 10px;color:var(--t2);font-weight:600}
@@ -73,6 +73,7 @@ details li{margin:6px 0}
         <button data-a="back">⏪<small>۱۰ ثانیه</small></button>
         <button data-a="toggle">⏯<small>پخش/مکث</small></button>
         <button data-a="fwd">⏩<small>۱۰ ثانیه</small></button>
+        <button data-a="rot">⟳<small>چرخش</small></button>
         <button data-a="stop">⏹<small>بستن</small></button>
       </div>
     </section>
@@ -132,7 +133,67 @@ details li{margin:6px 0}
   function next() {
     if (cur || !queue.length) return;
     cur = queue.shift(); cur.tries = 0; cur.t0 = Date.now(); cur.b0 = 0;
-    var u = cur; req('GET', '/api/up/' + u.id, function (st, j) { u.b0 = st === 200 && j && !j.gone ? j.recv || 0 : 0; send(u.b0); });
+    var u = cur;
+    plan(u.f, function (t) {
+      u.tail = t;
+      req('GET', '/api/up/' + u.id, function (st, j) { j = st === 200 && j && !j.gone ? j : null; u.b0 = j ? j.recv || 0 : 0; go(j); });
+    });
+  }
+  /* MP4 from a phone camera or Telegram usually has its index (moov) at the END. Sending that part first lets the TV
+     start playing after a few MB instead of after the whole file. plan() reads only the box headers. */
+  function readAt(f, pos, n, cb) {
+    var r = new FileReader();
+    r.onload = function () { cb(new DataView(r.result)); };
+    r.onerror = function () { cb(null); };
+    r.readAsArrayBuffer(f.slice(pos, pos + n));
+  }
+  function plan(f, cb) {
+    if (!/\.(mp4|m4v|mov|3gp)$/i.test(f.name || '') && !/mp4|quicktime|3gpp/.test(f.type || '')) return cb(null);
+    var pos = 0, mdat = false, steps = 0;
+    (function step() {
+      if (pos + 8 > f.size || steps++ > 100) return cb(null);
+      readAt(f, pos, 16, function (dv) {
+        if (!dv || dv.byteLength < 8) return cb(null);
+        var sz = dv.getUint32(0), t = String.fromCharCode(dv.getUint8(4), dv.getUint8(5), dv.getUint8(6), dv.getUint8(7));
+        if (sz === 1) { if (dv.byteLength < 16) return cb(null); sz = dv.getUint32(8) * 4294967296 + dv.getUint32(12); }
+        else if (sz === 0) sz = f.size - pos;
+        if (t === 'moov') return cb(mdat && pos > 0 && f.size - pos <= 64 * 1048576 ? pos : null);
+        if (t === 'mdat') mdat = true;
+        if (sz < 8) return cb(null);
+        pos += sz; step();
+      });
+    })();
+  }
+  // next step from the TV's answer: the index part (if planned and missing), else the rest from where the TV stands
+  function go(j) {
+    var u = cur; if (!u) return;
+    if (j && j.done) return finished(u);
+    if (u.tail !== null && u.tail !== undefined && !(j && j.tailDone)) return sendTail();
+    send(j ? j.recv || 0 : 0);
+  }
+  function finished(u) { u.done = true; u.sent = u.f.size; card(); refresh(); setTimeout(function () { cur = null; next(); if (!cur) card(); }, 600); }
+  function failed(x, j) {
+    var u = cur;
+    if (x.status === 507) { u.err = j && j.err === 'space' ? 'حافظه تلویزیون پر است – ویدیوهای قبلی را حذف کنید.' : 'خطا در ذخیره روی تلویزیون.'; card(); cur = null; next(); return true; }
+    if (x.status === 403) { u.err = 'کد اشتباه است – QR را دوباره اسکن کنید.'; card(); return true; }
+    return false;
+  }
+  function url(u, off, part) {
+    return '/api/up/' + u.id + '?k=' + CODE + '&off=' + off + '&size=' + u.f.size + '&auto=' + (u.auto ? 1 : 0) + (part ? '&part=' + part : '') +
+      '&name=' + encodeURIComponent(u.f.name || 'video.mp4') + '&type=' + encodeURIComponent(u.f.type || '');
+  }
+  function sendTail() {
+    var u = cur; u.retrying = false; card();
+    var x = new XMLHttpRequest();
+    x.open('POST', url(u, u.tail, 'tail'));
+    x.upload.onprogress = function (e) { u.sent = e.loaded; card(); };
+    x.onload = function () {
+      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 200 && j && (j.tailDone || j.done)) return go(j);
+      if (!failed(x, j)) retry();
+    };
+    x.onerror = retry;
+    x.send(u.f.slice(u.tail));
   }
   function card() {
     var c = $('upCard'), u = cur; if (!u) return;
@@ -149,21 +210,19 @@ details li{margin:6px 0}
     c.querySelector('.nm').textContent = bare(u.f.name);
   }
   function send(off) {
-    var u = cur; u.sent = off; u.retrying = false; card();
+    var u = cur, hasTail = u.tail !== null && u.tail !== undefined, end = hasTail ? u.tail : u.f.size, pre = hasTail ? u.f.size - u.tail : 0;
+    u.sent = pre + off; u.retrying = false; card();
     var x = new XMLHttpRequest();
-    x.open('POST', '/api/up/' + u.id + '?k=' + CODE + '&off=' + off + '&size=' + u.f.size + '&auto=' + (u.auto ? 1 : 0) +
-      '&name=' + encodeURIComponent(u.f.name || 'video.mp4') + '&type=' + encodeURIComponent(u.f.type || ''));
-    x.upload.onprogress = function (e) { u.sent = off + e.loaded; if (!u.shown || Date.now() - u.shown > 400) { u.shown = Date.now(); card(); } };
+    x.open('POST', url(u, off));
+    x.upload.onprogress = function (e) { u.sent = pre + off + e.loaded; if (!u.shown || Date.now() - u.shown > 400) { u.shown = Date.now(); card(); } };
     x.onload = function () {
       var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
-      if (x.status === 200 && j && j.done) { u.done = true; u.sent = u.f.size; card(); refresh(); setTimeout(function () { cur = null; next(); if (!cur) card(); }, 600); return; }
-      if (x.status === 409 && j) return send(j.recv || 0);
-      if (x.status === 507) { u.err = j && j.err === 'space' ? 'حافظه تلویزیون پر است – ویدیوهای قبلی را حذف کنید.' : 'خطا در ذخیره روی تلویزیون.'; card(); cur = null; next(); return; }
-      if (x.status === 403) { u.err = 'کد اشتباه است – QR را دوباره اسکن کنید.'; card(); return; }
-      retry();
+      if (x.status === 200 && j) return j.done ? finished(u) : (j.recv >= end && hasTail && !j.tailDone ? sendTail() : (j.recv < end ? send(j.recv) : retry()));
+      if (x.status === 409 && j) return go(j);
+      if (!failed(x, j)) retry();
     };
     x.onerror = retry;
-    x.send(u.f.slice(off));
+    x.send(u.f.slice(off, end));
   }
   function retry() {
     var u = cur; if (!u) return;
@@ -173,7 +232,7 @@ details li{margin:6px 0}
       if (document.hidden) { document.addEventListener('visibilitychange', function w() { if (!document.hidden) { document.removeEventListener('visibilitychange', w); retry0(); } }); return; }
       retry0();
     }, Math.min(10000, 1500 * u.tries));
-    function retry0() { req('GET', '/api/up/' + u.id, function (st, j) { if (st === 200 && j) send(j.gone ? 0 : (j.recv || 0)); else retry(); }); }
+    function retry0() { req('GET', '/api/up/' + u.id, function (st, j) { if (st === 200 && j) go(j.gone ? null : j); else retry(); }); }
   }
   window.addEventListener('beforeunload', function (e) { if (cur && !cur.done) { e.preventDefault(); e.returnValue = ''; } });
 

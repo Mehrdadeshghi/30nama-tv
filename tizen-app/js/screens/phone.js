@@ -143,6 +143,7 @@
     else if (a === 'back') P.seekBy(-10);
     else if (a === 'fwd') P.seekBy(10);
     else if (a === 'stop') P.close();
+    else if (a === 'rot' && P.post && P.post.local) P.rotate();
   }
   PH.url = function (it) { return PH.base() + '/v/' + it.id + '.' + (it.ext || 'mp4'); };
   function nameOf(it) { return String(it.name || 'Video').replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[_]+/g, ' '); }
@@ -155,7 +156,10 @@
     if (document.querySelector('.modal') && N.closeModal) N.closeModal();
     var key = 'phone:' + it.id, pos = N.store.get('phone.pos', {}), saved = pos[it.id], start = 0;
     if (saved && saved.t > 15 && !(saved.d && saved.t > saved.d - 20)) start = saved.t;
-    var post = { id: key, local: true, title: { english: nameOf(it) }, info: {}, image: null,
+    // turn: what the user chose last time for this video, else the rotation stored in the file
+    var rots = N.store.get('phone.rot', {}), rot = rots[it.id] !== undefined ? rots[it.id] : (it.rot || 0);
+    var post = { id: key, local: true, title: { english: nameOf(it) }, info: {}, image: null, rot: rot,
+      onRot: function (r) { var all = N.store.get('phone.rot', {}); all[it.id] = r; N.store.set('phone.rot', all); },
       onSave: function (t, d) {
         if (!(t > 0)) return;
         var all = N.store.get('phone.pos', {}); all[it.id] = { t: Math.floor(t), d: Math.floor(d || 0), at: Date.now() };

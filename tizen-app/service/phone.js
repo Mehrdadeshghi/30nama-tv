@@ -17,8 +17,8 @@
 (function () {
   'use strict';
   var http = require('http'), fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
-  var VERSION = "1.2.3", PORT = 8030, KEEP = 4, CHUNK = 256 * 1024, STALL_MS = 90000, RESERVE = 300 * 1048576;
-  var PAGE = "<!doctype html>\n<html lang=\"fa\" dir=\"rtl\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n<meta name=\"theme-color\" content=\"#111113\">\n<title>سی‌نما · ارسال به تلویزیون</title>\n<style>\n:root{--bg:#111113;--card:#1d1d20;--line:#2c2c30;--t1:#f5f5f7;--t2:#a1a1a8;--brand:#f5c518;--ok:#34c759;--bad:#ff453a;--r:18px}\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nhtml,body{margin:0;background:var(--bg);color:var(--t1);font:16px/1.6 system-ui,-apple-system,\"Segoe UI\",Tahoma,sans-serif}\nmain{max-width:560px;margin:0 auto;padding:20px 16px calc(40px + env(safe-area-inset-bottom))}\nh1{font-size:22px;margin:4px 0 2px}\n.sub{color:var(--t2);font-size:14px;margin:0 0 18px}\n.card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px}\n.pick{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:64px;border-radius:var(--r);background:var(--brand);color:#000;font-size:19px;font-weight:700;border:0;cursor:pointer}\n.pick input{display:none}\n.row{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.sw{display:flex;align-items:center;gap:10px;margin-top:14px;color:var(--t2);font-size:15px}\n.sw input{width:22px;height:22px;accent-color:var(--brand)}\n.nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext;text-align:right}\n.meta{color:var(--t2);font-size:14px}\n.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0 6px}\n.bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}\n.done .bar i{background:var(--ok)}\n.err{color:var(--bad)}\n.btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}\nbutton.b{flex:1;min-height:46px;border-radius:12px;border:0;background:var(--line);color:var(--t1);font:inherit;font-weight:600;cursor:pointer}\nbutton.b.p{background:var(--t1);color:#000}\nbutton.b.d{flex:0 0 auto;padding:0 16px;color:var(--bad)}\n.remote{direction:ltr;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}\n.remote button{min-height:56px;border-radius:14px;border:0;background:var(--line);color:var(--t1);font-size:20px;cursor:pointer}\n.remote button small{display:block;font-size:11px;color:var(--t2)}\nh2{font-size:16px;margin:22px 4px 10px;color:var(--t2);font-weight:600}\n.item{border-top:1px solid var(--line);padding:12px 0}\n.item:first-child{border-top:0;padding-top:0}\n.empty{color:var(--t2);font-size:14px;text-align:center;padding:6px 0}\ndetails{color:var(--t2);font-size:14px}\ndetails summary{cursor:pointer;color:var(--t1);font-weight:600}\ndetails li{margin:6px 0}\n.code{display:flex;gap:10px}\n.code input{flex:1;min-height:56px;border-radius:14px;border:1px solid var(--line);background:#000;color:var(--t1);font-size:28px;text-align:center;letter-spacing:10px;direction:ltr}\n.off{opacity:.45}\n.toast{position:fixed;inset-inline:16px;bottom:calc(18px + env(safe-area-inset-bottom));background:#2c2c30;border-radius:14px;padding:12px 16px;text-align:center;opacity:0;transform:translateY(20px);transition:.25s;pointer-events:none}\n.toast.on{opacity:1;transform:none}\n.ver{color:#55555b;font-size:12px;text-align:center;margin-top:24px}\n</style>\n</head>\n<body>\n<main>\n  <h1>ارسال ویدیو به تلویزیون</h1>\n  <p class=\"sub\">فایل اصلی روی تلویزیون پخش می‌شود – با صدای کامل، بدون آینه‌کردن صفحه.</p>\n\n  <section id=\"ask\" class=\"card\" hidden>\n    <p style=\"margin-top:0\">کد ۴ رقمی روی صفحه تلویزیون (بخش «از گوشی») را وارد کنید:</p>\n    <form class=\"code\" id=\"codeForm\"><input id=\"codeIn\" inputmode=\"numeric\" pattern=\"[0-9]*\" maxlength=\"4\" autocomplete=\"off\"><button class=\"b p\" style=\"flex:0 0 96px\">ادامه</button></form>\n  </section>\n\n  <div id=\"app\" hidden>\n    <section class=\"card\">\n      <label class=\"pick\" id=\"pickBtn\">\n        <svg width=\"26\" height=\"26\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 16V4M6 10l6-6 6 6M4 20h16\"/></svg>\n        <span>انتخاب ویدیو</span>\n        <input type=\"file\" id=\"file\" accept=\"video/*,audio/*,.mp4,.mov,.mkv,.webm,.m4v\" multiple>\n      </label>\n      <label class=\"sw\"><input type=\"checkbox\" id=\"auto\" checked> بلافاصله روی تلویزیون پخش شود</label>\n    </section>\n\n    <section id=\"upCard\" class=\"card\" hidden></section>\n\n    <section class=\"card\">\n      <div class=\"remote\">\n        <button data-a=\"back\">⏪<small>۱۰ ثانیه</small></button>\n        <button data-a=\"toggle\">⏯<small>پخش/مکث</small></button>\n        <button data-a=\"fwd\">⏩<small>۱۰ ثانیه</small></button>\n        <button data-a=\"stop\">⏹<small>بستن</small></button>\n      </div>\n    </section>\n\n    <h2>روی تلویزیون</h2>\n    <section class=\"card\" id=\"list\"><div class=\"empty\">هنوز ویدیویی ارسال نشده.</div></section>\n\n    <details class=\"card\">\n      <summary>ویدیو از تلگرام؟</summary>\n      <ul>\n        <li><b>اندروید:</b> ویدیو را در تلگرام باز کنید ← منوی ⋮ ← «ذخیره در گالری» (Save to Gallery). بعد همین‌جا «انتخاب ویدیو».</li>\n        <li><b>آیفون:</b> ویدیو را باز کنید ← دکمه اشتراک‌گذاری ← «Save to Files» (کیفیت اصلی) یا «Save Video». بعد «انتخاب ویدیو» ← Browse/Files یا Photo Library.</li>\n        <li>گوشی و تلویزیون باید به یک وای‌فای وصل باشند. تا پایان ارسال این صفحه را باز نگه دارید؛ اگر قطع شد، از همان‌جا ادامه می‌دهد.</li>\n        <li>پخش از چند ثانیه بعد از شروع ارسال آغاز می‌شود (ویدیوهای تلگرام). بقیه ویدیوها بعد از پایان ارسال پخش می‌شوند.</li>\n      </ul>\n    </details>\n    <div class=\"ver\">30nama · __VER__</div>\n  </div>\n</main>\n<div class=\"toast\" id=\"toast\"></div>\n<script>\n(function () {\n  var CODE = '__CODE__', $ = function (id) { return document.getElementById(id); };\n  var fa = function (n) { try { return Number(n).toLocaleString('fa-IR'); } catch (e) { return String(n); } };\n  function toast(m) { var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('on'); }, 2600); }\n  if (!CODE) {\n    $('ask').hidden = false;\n    $('codeForm').onsubmit = function (e) { e.preventDefault(); var v = $('codeIn').value.replace(/\\D/g, ''); if (v.length === 4) location.href = '/' + v; };\n    return;\n  }\n  $('app').hidden = false;\n  try { var a0 = localStorage.getItem('n30auto'); if (a0 !== null) $('auto').checked = a0 === '1'; } catch (e) {}\n  $('auto').onchange = function () { try { localStorage.setItem('n30auto', $('auto').checked ? '1' : '0'); } catch (e) {} };\n\n  function mb(b) { var m = b / 1048576; return m >= 1000 ? fa((m / 1024).toFixed(1)) + ' گیگابایت' : fa(m < 10 ? m.toFixed(1) : Math.round(m)) + ' مگابایت'; }\n  function req(method, url, cb, body) {\n    var x = new XMLHttpRequest();\n    x.open(method, url + (url.indexOf('?') < 0 ? '?' : '&') + 'k=' + CODE);\n    x.timeout = 15000;\n    x.onload = function () { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} cb && cb(x.status, j); };\n    x.onerror = x.ontimeout = function () { cb && cb(0, null); };\n    x.send(body || null);\n    return x;\n  }\n\n  /* ---------- upload queue (one at a time, resumable) ---------- */\n  var queue = [], cur = null, known = [];\n  function bare(n) { return String(n || '').replace(/\\.[a-z0-9]{2,4}$/i, ''); }\n  // the same file picked again continues its unfinished upload instead of starting over\n  function idFor(f) { for (var i = 0; i < known.length; i++) if (!known[i].done && known[i].name === f.name && known[i].size === f.size) return known[i].id; return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }\n  $('file').onchange = function () {\n    var fs = $('file').files;\n    for (var i = 0; i < fs.length; i++) queue.push({ f: fs[i], id: idFor(fs[i]), auto: $('auto').checked && i === 0 && !cur });\n    $('file').value = '';\n    next();\n  };\n  function next() {\n    if (cur || !queue.length) return;\n    cur = queue.shift(); cur.tries = 0; cur.t0 = Date.now(); cur.b0 = 0;\n    var u = cur; req('GET', '/api/up/' + u.id, function (st, j) { u.b0 = st === 200 && j && !j.gone ? j.recv || 0 : 0; send(u.b0); });\n  }\n  function card() {\n    var c = $('upCard'), u = cur; if (!u) return;\n    c.hidden = false; c.className = 'card' + (u.done ? ' done' : '');\n    var pct = u.f.size ? Math.min(100, Math.floor(u.sent * 100 / u.f.size)) : 0, info;\n    if (u.err) info = '<span class=\"err\">' + u.err + '</span>';\n    else if (u.done) info = 'ارسال شد' + (u.auto ? ' · روی تلویزیون پخش می‌شود' : '');\n    else {\n      var sec = (Date.now() - u.t0) / 1000, rate = sec > 1 ? (u.sent - u.b0) / sec : 0, left = rate > 0 ? Math.ceil((u.f.size - u.sent) / rate) : 0;\n      info = fa(pct) + '٪ · ' + mb(u.sent) + ' از ' + mb(u.f.size) + (rate > 0 ? ' · ' + mb(rate) + '/ثانیه' : '') + (left > 0 ? ' · ' + (left > 90 ? fa(Math.ceil(left / 60)) + ' دقیقه' : fa(left) + ' ثانیه') + ' مانده' : '');\n      if (u.retrying) info = 'اتصال قطع شد – ادامه ارسال…';\n    }\n    c.innerHTML = '<div class=\"nm\"></div><div class=\"bar\"><i style=\"width:' + pct + '%\"></i></div><div class=\"meta\">' + info + (queue.length ? ' · ' + fa(queue.length) + ' فایل در صف' : '') + '</div>';\n    c.querySelector('.nm').textContent = bare(u.f.name);\n  }\n  function send(off) {\n    var u = cur; u.sent = off; u.retrying = false; card();\n    var x = new XMLHttpRequest();\n    x.open('POST', '/api/up/' + u.id + '?k=' + CODE + '&off=' + off + '&size=' + u.f.size + '&auto=' + (u.auto ? 1 : 0) +\n      '&name=' + encodeURIComponent(u.f.name || 'video.mp4') + '&type=' + encodeURIComponent(u.f.type || ''));\n    x.upload.onprogress = function (e) { u.sent = off + e.loaded; if (!u.shown || Date.now() - u.shown > 400) { u.shown = Date.now(); card(); } };\n    x.onload = function () {\n      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}\n      if (x.status === 200 && j && j.done) { u.done = true; u.sent = u.f.size; card(); refresh(); setTimeout(function () { cur = null; next(); if (!cur) card(); }, 600); return; }\n      if (x.status === 409 && j) return send(j.recv || 0);\n      if (x.status === 507) { u.err = j && j.err === 'space' ? 'حافظه تلویزیون پر است – ویدیوهای قبلی را حذف کنید.' : 'خطا در ذخیره روی تلویزیون.'; card(); cur = null; next(); return; }\n      if (x.status === 403) { u.err = 'کد اشتباه است – QR را دوباره اسکن کنید.'; card(); return; }\n      retry();\n    };\n    x.onerror = retry;\n    x.send(u.f.slice(off));\n  }\n  function retry() {\n    var u = cur; if (!u) return;\n    if (++u.tries > 40) { u.err = 'ارسال ناموفق بود. تلویزیون و ۳۰نما روشن است؟'; card(); cur = null; next(); return; }\n    u.retrying = true; card();\n    setTimeout(function () {\n      if (document.hidden) { document.addEventListener('visibilitychange', function w() { if (!document.hidden) { document.removeEventListener('visibilitychange', w); retry0(); } }); return; }\n      retry0();\n    }, Math.min(10000, 1500 * u.tries));\n    function retry0() { req('GET', '/api/up/' + u.id, function (st, j) { if (st === 200 && j) send(j.gone ? 0 : (j.recv || 0)); else retry(); }); }\n  }\n  window.addEventListener('beforeunload', function (e) { if (cur && !cur.done) { e.preventDefault(); e.returnValue = ''; } });\n\n  /* ---------- remote ---------- */\n  Array.prototype.forEach.call(document.querySelectorAll('.remote button'), function (b) {\n    b.onclick = function () { req('POST', '/api/ctl?a=' + b.getAttribute('data-a'), function (st) { if (st !== 200) toast('تلویزیون پاسخ نداد'); }); };\n  });\n\n  /* ---------- list of videos on the TV ---------- */\n  function refresh() {\n    req('GET', '/api/state', function (st, j) {\n      if (st !== 200 || !j) return;\n      known = j.items;\n      var box = $('list'); box.innerHTML = '';\n      if (!j.items.length) { box.innerHTML = '<div class=\"empty\">هنوز ویدیویی ارسال نشده.</div>'; return; }\n      j.items.forEach(function (it) {\n        var d = document.createElement('div'); d.className = 'item';\n        var pct = it.size ? Math.floor(it.recv * 100 / it.size) : 0;\n        var s = it.done ? mb(it.size) : (it.busy ? 'در حال ارسال · ' + fa(pct) + '٪' : 'ناتمام · ' + fa(pct) + '٪ – همان فایل را دوباره انتخاب کنید تا ادامه دهد');\n        if (j.play && j.play.id === it.id) s += ' · آخرین پخش';\n        d.innerHTML = '<div class=\"nm\"></div><div class=\"meta\">' + s + '</div><div class=\"btns\"><button class=\"b p\">▶ پخش روی تلویزیون</button><button class=\"b d\">حذف</button></div>';\n        d.querySelector('.nm').textContent = bare(it.name);\n        var pb = d.querySelector('.p'); if (!it.ready) pb.classList.add('off');\n        pb.onclick = function () { req('POST', '/api/play/' + it.id, function (s2, r) { toast(s2 === 200 ? (r && r.ready ? 'روی تلویزیون پخش می‌شود' : 'بعد از ارسال پخش می‌شود') : 'تلویزیون پاسخ نداد'); }); };\n        d.querySelector('.d').onclick = function () { if (confirm('این ویدیو از تلویزیون حذف شود؟')) req('POST', '/api/del/' + it.id, refresh); };\n        box.appendChild(d);\n      });\n    });\n  }\n  refresh(); setInterval(function () { if (!document.hidden) refresh(); }, 4000);\n})();\n</script>\n</body>\n</html>\n";
+  var VERSION = "1.2.4", PORT = 8030, KEEP = 4, CHUNK = 256 * 1024, STALL_MS = 90000, RESERVE = 300 * 1048576;
+  var PAGE = "<!doctype html>\n<html lang=\"fa\" dir=\"rtl\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n<meta name=\"theme-color\" content=\"#111113\">\n<title>سی‌نما · ارسال به تلویزیون</title>\n<style>\n:root{--bg:#111113;--card:#1d1d20;--line:#2c2c30;--t1:#f5f5f7;--t2:#a1a1a8;--brand:#f5c518;--ok:#34c759;--bad:#ff453a;--r:18px}\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nhtml,body{margin:0;background:var(--bg);color:var(--t1);font:16px/1.6 system-ui,-apple-system,\"Segoe UI\",Tahoma,sans-serif}\nmain{max-width:560px;margin:0 auto;padding:20px 16px calc(40px + env(safe-area-inset-bottom))}\nh1{font-size:22px;margin:4px 0 2px}\n.sub{color:var(--t2);font-size:14px;margin:0 0 18px}\n.card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px}\n.pick{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:64px;border-radius:var(--r);background:var(--brand);color:#000;font-size:19px;font-weight:700;border:0;cursor:pointer}\n.pick input{display:none}\n.row{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.sw{display:flex;align-items:center;gap:10px;margin-top:14px;color:var(--t2);font-size:15px}\n.sw input{width:22px;height:22px;accent-color:var(--brand)}\n.nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext;text-align:right}\n.meta{color:var(--t2);font-size:14px}\n.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0 6px}\n.bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}\n.done .bar i{background:var(--ok)}\n.err{color:var(--bad)}\n.btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}\nbutton.b{flex:1;min-height:46px;border-radius:12px;border:0;background:var(--line);color:var(--t1);font:inherit;font-weight:600;cursor:pointer}\nbutton.b.p{background:var(--t1);color:#000}\nbutton.b.d{flex:0 0 auto;padding:0 16px;color:var(--bad)}\n.remote{direction:ltr;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}\n.remote button{min-height:56px;border-radius:14px;border:0;background:var(--line);color:var(--t1);font-size:20px;cursor:pointer}\n.remote button small{display:block;font-size:11px;color:var(--t2)}\nh2{font-size:16px;margin:22px 4px 10px;color:var(--t2);font-weight:600}\n.item{border-top:1px solid var(--line);padding:12px 0}\n.item:first-child{border-top:0;padding-top:0}\n.empty{color:var(--t2);font-size:14px;text-align:center;padding:6px 0}\ndetails{color:var(--t2);font-size:14px}\ndetails summary{cursor:pointer;color:var(--t1);font-weight:600}\ndetails li{margin:6px 0}\n.code{display:flex;gap:10px}\n.code input{flex:1;min-height:56px;border-radius:14px;border:1px solid var(--line);background:#000;color:var(--t1);font-size:28px;text-align:center;letter-spacing:10px;direction:ltr}\n.off{opacity:.45}\n.toast{position:fixed;inset-inline:16px;bottom:calc(18px + env(safe-area-inset-bottom));background:#2c2c30;border-radius:14px;padding:12px 16px;text-align:center;opacity:0;transform:translateY(20px);transition:.25s;pointer-events:none}\n.toast.on{opacity:1;transform:none}\n.ver{color:#55555b;font-size:12px;text-align:center;margin-top:24px}\n</style>\n</head>\n<body>\n<main>\n  <h1>ارسال ویدیو به تلویزیون</h1>\n  <p class=\"sub\">فایل اصلی روی تلویزیون پخش می‌شود – با صدای کامل، بدون آینه‌کردن صفحه.</p>\n\n  <section id=\"ask\" class=\"card\" hidden>\n    <p style=\"margin-top:0\">کد ۴ رقمی روی صفحه تلویزیون (بخش «از گوشی») را وارد کنید:</p>\n    <form class=\"code\" id=\"codeForm\"><input id=\"codeIn\" inputmode=\"numeric\" pattern=\"[0-9]*\" maxlength=\"4\" autocomplete=\"off\"><button class=\"b p\" style=\"flex:0 0 96px\">ادامه</button></form>\n  </section>\n\n  <div id=\"app\" hidden>\n    <section class=\"card\">\n      <label class=\"pick\" id=\"pickBtn\">\n        <svg width=\"26\" height=\"26\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 16V4M6 10l6-6 6 6M4 20h16\"/></svg>\n        <span>انتخاب ویدیو</span>\n        <input type=\"file\" id=\"file\" accept=\"video/*,audio/*,.mp4,.mov,.mkv,.webm,.m4v\" multiple>\n      </label>\n      <label class=\"sw\"><input type=\"checkbox\" id=\"auto\" checked> بلافاصله روی تلویزیون پخش شود</label>\n    </section>\n\n    <section id=\"upCard\" class=\"card\" hidden></section>\n\n    <section class=\"card\">\n      <div class=\"remote\">\n        <button data-a=\"back\">⏪<small>۱۰ ثانیه</small></button>\n        <button data-a=\"toggle\">⏯<small>پخش/مکث</small></button>\n        <button data-a=\"fwd\">⏩<small>۱۰ ثانیه</small></button>\n        <button data-a=\"rot\">⟳<small>چرخش</small></button>\n        <button data-a=\"stop\">⏹<small>بستن</small></button>\n      </div>\n    </section>\n\n    <h2>روی تلویزیون</h2>\n    <section class=\"card\" id=\"list\"><div class=\"empty\">هنوز ویدیویی ارسال نشده.</div></section>\n\n    <details class=\"card\">\n      <summary>ویدیو از تلگرام؟</summary>\n      <ul>\n        <li><b>اندروید:</b> ویدیو را در تلگرام باز کنید ← منوی ⋮ ← «ذخیره در گالری» (Save to Gallery). بعد همین‌جا «انتخاب ویدیو».</li>\n        <li><b>آیفون:</b> ویدیو را باز کنید ← دکمه اشتراک‌گذاری ← «Save to Files» (کیفیت اصلی) یا «Save Video». بعد «انتخاب ویدیو» ← Browse/Files یا Photo Library.</li>\n        <li>گوشی و تلویزیون باید به یک وای‌فای وصل باشند. تا پایان ارسال این صفحه را باز نگه دارید؛ اگر قطع شد، از همان‌جا ادامه می‌دهد.</li>\n        <li>پخش از چند ثانیه بعد از شروع ارسال آغاز می‌شود (ویدیوهای تلگرام). بقیه ویدیوها بعد از پایان ارسال پخش می‌شوند.</li>\n      </ul>\n    </details>\n    <div class=\"ver\">30nama · __VER__</div>\n  </div>\n</main>\n<div class=\"toast\" id=\"toast\"></div>\n<script>\n(function () {\n  var CODE = '__CODE__', $ = function (id) { return document.getElementById(id); };\n  var fa = function (n) { try { return Number(n).toLocaleString('fa-IR'); } catch (e) { return String(n); } };\n  function toast(m) { var t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('on'); }, 2600); }\n  if (!CODE) {\n    $('ask').hidden = false;\n    $('codeForm').onsubmit = function (e) { e.preventDefault(); var v = $('codeIn').value.replace(/\\D/g, ''); if (v.length === 4) location.href = '/' + v; };\n    return;\n  }\n  $('app').hidden = false;\n  try { var a0 = localStorage.getItem('n30auto'); if (a0 !== null) $('auto').checked = a0 === '1'; } catch (e) {}\n  $('auto').onchange = function () { try { localStorage.setItem('n30auto', $('auto').checked ? '1' : '0'); } catch (e) {} };\n\n  function mb(b) { var m = b / 1048576; return m >= 1000 ? fa((m / 1024).toFixed(1)) + ' گیگابایت' : fa(m < 10 ? m.toFixed(1) : Math.round(m)) + ' مگابایت'; }\n  function req(method, url, cb, body) {\n    var x = new XMLHttpRequest();\n    x.open(method, url + (url.indexOf('?') < 0 ? '?' : '&') + 'k=' + CODE);\n    x.timeout = 15000;\n    x.onload = function () { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} cb && cb(x.status, j); };\n    x.onerror = x.ontimeout = function () { cb && cb(0, null); };\n    x.send(body || null);\n    return x;\n  }\n\n  /* ---------- upload queue (one at a time, resumable) ---------- */\n  var queue = [], cur = null, known = [];\n  function bare(n) { return String(n || '').replace(/\\.[a-z0-9]{2,4}$/i, ''); }\n  // the same file picked again continues its unfinished upload instead of starting over\n  function idFor(f) { for (var i = 0; i < known.length; i++) if (!known[i].done && known[i].name === f.name && known[i].size === f.size) return known[i].id; return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }\n  $('file').onchange = function () {\n    var fs = $('file').files;\n    for (var i = 0; i < fs.length; i++) queue.push({ f: fs[i], id: idFor(fs[i]), auto: $('auto').checked && i === 0 && !cur });\n    $('file').value = '';\n    next();\n  };\n  function next() {\n    if (cur || !queue.length) return;\n    cur = queue.shift(); cur.tries = 0; cur.t0 = Date.now(); cur.b0 = 0;\n    var u = cur;\n    plan(u.f, function (t) {\n      u.tail = t;\n      req('GET', '/api/up/' + u.id, function (st, j) { j = st === 200 && j && !j.gone ? j : null; u.b0 = j ? j.recv || 0 : 0; go(j); });\n    });\n  }\n  /* MP4 from a phone camera or Telegram usually has its index (moov) at the END. Sending that part first lets the TV\n     start playing after a few MB instead of after the whole file. plan() reads only the box headers. */\n  function readAt(f, pos, n, cb) {\n    var r = new FileReader();\n    r.onload = function () { cb(new DataView(r.result)); };\n    r.onerror = function () { cb(null); };\n    r.readAsArrayBuffer(f.slice(pos, pos + n));\n  }\n  function plan(f, cb) {\n    if (!/\\.(mp4|m4v|mov|3gp)$/i.test(f.name || '') && !/mp4|quicktime|3gpp/.test(f.type || '')) return cb(null);\n    var pos = 0, mdat = false, steps = 0;\n    (function step() {\n      if (pos + 8 > f.size || steps++ > 100) return cb(null);\n      readAt(f, pos, 16, function (dv) {\n        if (!dv || dv.byteLength < 8) return cb(null);\n        var sz = dv.getUint32(0), t = String.fromCharCode(dv.getUint8(4), dv.getUint8(5), dv.getUint8(6), dv.getUint8(7));\n        if (sz === 1) { if (dv.byteLength < 16) return cb(null); sz = dv.getUint32(8) * 4294967296 + dv.getUint32(12); }\n        else if (sz === 0) sz = f.size - pos;\n        if (t === 'moov') return cb(mdat && pos > 0 && f.size - pos <= 64 * 1048576 ? pos : null);\n        if (t === 'mdat') mdat = true;\n        if (sz < 8) return cb(null);\n        pos += sz; step();\n      });\n    })();\n  }\n  // next step from the TV's answer: the index part (if planned and missing), else the rest from where the TV stands\n  function go(j) {\n    var u = cur; if (!u) return;\n    if (j && j.done) return finished(u);\n    if (u.tail !== null && u.tail !== undefined && !(j && j.tailDone)) return sendTail();\n    send(j ? j.recv || 0 : 0);\n  }\n  function finished(u) { u.done = true; u.sent = u.f.size; card(); refresh(); setTimeout(function () { cur = null; next(); if (!cur) card(); }, 600); }\n  function failed(x, j) {\n    var u = cur;\n    if (x.status === 507) { u.err = j && j.err === 'space' ? 'حافظه تلویزیون پر است – ویدیوهای قبلی را حذف کنید.' : 'خطا در ذخیره روی تلویزیون.'; card(); cur = null; next(); return true; }\n    if (x.status === 403) { u.err = 'کد اشتباه است – QR را دوباره اسکن کنید.'; card(); return true; }\n    return false;\n  }\n  function url(u, off, part) {\n    return '/api/up/' + u.id + '?k=' + CODE + '&off=' + off + '&size=' + u.f.size + '&auto=' + (u.auto ? 1 : 0) + (part ? '&part=' + part : '') +\n      '&name=' + encodeURIComponent(u.f.name || 'video.mp4') + '&type=' + encodeURIComponent(u.f.type || '');\n  }\n  function sendTail() {\n    var u = cur; u.retrying = false; card();\n    var x = new XMLHttpRequest();\n    x.open('POST', url(u, u.tail, 'tail'));\n    x.upload.onprogress = function (e) { u.sent = e.loaded; card(); };\n    x.onload = function () {\n      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}\n      if (x.status === 200 && j && (j.tailDone || j.done)) return go(j);\n      if (!failed(x, j)) retry();\n    };\n    x.onerror = retry;\n    x.send(u.f.slice(u.tail));\n  }\n  function card() {\n    var c = $('upCard'), u = cur; if (!u) return;\n    c.hidden = false; c.className = 'card' + (u.done ? ' done' : '');\n    var pct = u.f.size ? Math.min(100, Math.floor(u.sent * 100 / u.f.size)) : 0, info;\n    if (u.err) info = '<span class=\"err\">' + u.err + '</span>';\n    else if (u.done) info = 'ارسال شد' + (u.auto ? ' · روی تلویزیون پخش می‌شود' : '');\n    else {\n      var sec = (Date.now() - u.t0) / 1000, rate = sec > 1 ? (u.sent - u.b0) / sec : 0, left = rate > 0 ? Math.ceil((u.f.size - u.sent) / rate) : 0;\n      info = fa(pct) + '٪ · ' + mb(u.sent) + ' از ' + mb(u.f.size) + (rate > 0 ? ' · ' + mb(rate) + '/ثانیه' : '') + (left > 0 ? ' · ' + (left > 90 ? fa(Math.ceil(left / 60)) + ' دقیقه' : fa(left) + ' ثانیه') + ' مانده' : '');\n      if (u.retrying) info = 'اتصال قطع شد – ادامه ارسال…';\n    }\n    c.innerHTML = '<div class=\"nm\"></div><div class=\"bar\"><i style=\"width:' + pct + '%\"></i></div><div class=\"meta\">' + info + (queue.length ? ' · ' + fa(queue.length) + ' فایل در صف' : '') + '</div>';\n    c.querySelector('.nm').textContent = bare(u.f.name);\n  }\n  function send(off) {\n    var u = cur, hasTail = u.tail !== null && u.tail !== undefined, end = hasTail ? u.tail : u.f.size, pre = hasTail ? u.f.size - u.tail : 0;\n    u.sent = pre + off; u.retrying = false; card();\n    var x = new XMLHttpRequest();\n    x.open('POST', url(u, off));\n    x.upload.onprogress = function (e) { u.sent = pre + off + e.loaded; if (!u.shown || Date.now() - u.shown > 400) { u.shown = Date.now(); card(); } };\n    x.onload = function () {\n      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}\n      if (x.status === 200 && j) return j.done ? finished(u) : (j.recv >= end && hasTail && !j.tailDone ? sendTail() : (j.recv < end ? send(j.recv) : retry()));\n      if (x.status === 409 && j) return go(j);\n      if (!failed(x, j)) retry();\n    };\n    x.onerror = retry;\n    x.send(u.f.slice(off, end));\n  }\n  function retry() {\n    var u = cur; if (!u) return;\n    if (++u.tries > 40) { u.err = 'ارسال ناموفق بود. تلویزیون و ۳۰نما روشن است؟'; card(); cur = null; next(); return; }\n    u.retrying = true; card();\n    setTimeout(function () {\n      if (document.hidden) { document.addEventListener('visibilitychange', function w() { if (!document.hidden) { document.removeEventListener('visibilitychange', w); retry0(); } }); return; }\n      retry0();\n    }, Math.min(10000, 1500 * u.tries));\n    function retry0() { req('GET', '/api/up/' + u.id, function (st, j) { if (st === 200 && j) go(j.gone ? null : j); else retry(); }); }\n  }\n  window.addEventListener('beforeunload', function (e) { if (cur && !cur.done) { e.preventDefault(); e.returnValue = ''; } });\n\n  /* ---------- remote ---------- */\n  Array.prototype.forEach.call(document.querySelectorAll('.remote button'), function (b) {\n    b.onclick = function () { req('POST', '/api/ctl?a=' + b.getAttribute('data-a'), function (st) { if (st !== 200) toast('تلویزیون پاسخ نداد'); }); };\n  });\n\n  /* ---------- list of videos on the TV ---------- */\n  function refresh() {\n    req('GET', '/api/state', function (st, j) {\n      if (st !== 200 || !j) return;\n      known = j.items;\n      var box = $('list'); box.innerHTML = '';\n      if (!j.items.length) { box.innerHTML = '<div class=\"empty\">هنوز ویدیویی ارسال نشده.</div>'; return; }\n      j.items.forEach(function (it) {\n        var d = document.createElement('div'); d.className = 'item';\n        var pct = it.size ? Math.floor(it.recv * 100 / it.size) : 0;\n        var s = it.done ? mb(it.size) : (it.busy ? 'در حال ارسال · ' + fa(pct) + '٪' : 'ناتمام · ' + fa(pct) + '٪ – همان فایل را دوباره انتخاب کنید تا ادامه دهد');\n        if (j.play && j.play.id === it.id) s += ' · آخرین پخش';\n        d.innerHTML = '<div class=\"nm\"></div><div class=\"meta\">' + s + '</div><div class=\"btns\"><button class=\"b p\">▶ پخش روی تلویزیون</button><button class=\"b d\">حذف</button></div>';\n        d.querySelector('.nm').textContent = bare(it.name);\n        var pb = d.querySelector('.p'); if (!it.ready) pb.classList.add('off');\n        pb.onclick = function () { req('POST', '/api/play/' + it.id, function (s2, r) { toast(s2 === 200 ? (r && r.ready ? 'روی تلویزیون پخش می‌شود' : 'بعد از ارسال پخش می‌شود') : 'تلویزیون پاسخ نداد'); }); };\n        d.querySelector('.d').onclick = function () { if (confirm('این ویدیو از تلویزیون حذف شود؟')) req('POST', '/api/del/' + it.id, refresh); };\n        box.appendChild(d);\n      });\n    });\n  }\n  refresh(); setInterval(function () { if (!document.hidden) refresh(); }, 4000);\n})();\n</script>\n</body>\n</html>\n";
 
   // one instance per TizenBrew process: a restarted service closes the old server first (else the port is taken)
   var prev = process.__n30phone;
@@ -51,7 +51,11 @@
   function idxFile() { return path.join(DIR, 'index.json'); }
   function save() {
     if (!DIR) return;
-    var out = items.map(function (it) { return { id: it.id, name: it.name, type: it.type, ext: it.ext, size: it.size, recv: it.recv, done: it.done, t: it.t, fast: it.fast }; });
+    var out = items.map(function (it) {
+      return { id: it.id, name: it.name, type: it.type, ext: it.ext, size: it.size, recv: it.recv, done: it.done, t: it.t, fast: it.fast,
+        tailStart: it.tailStart, tailRecv: it.tailRecv, tailDone: it.tailDone, tailMoov: it.tailMoov, moovOff: it.moovOff, moovSize: it.moovSize,
+        metaDone: it.metaDone, rot: it.rot, vw: it.vw, vh: it.vh };
+    });
     try { fs.writeFileSync(idxFile(), JSON.stringify({ code: code, items: out })); } catch (e) { log('save ' + e.message); }
   }
   function fileOf(it) { return path.join(DIR, it.id + '.' + it.ext); }
@@ -61,7 +65,13 @@
     code = j && /^\d{4}$/.test(j.code) ? j.code : String(1000 + Math.floor(Math.random() * 9000));
     items = [];
     ((j && j.items) || []).forEach(function (it) {
-      try { var st = fs.statSync(fileOf(it)); it.recv = Math.min(st.size, it.size || st.size); it.gen = 0; items.push(it); } catch (e) {}
+      try {
+        var st = fs.statSync(fileOf(it));
+        // head bytes as saved (the file can be longer: a tail sent first makes it sparse)
+        it.recv = it.done ? it.size : Math.min(it.recv || 0, st.size); it.gen = 0;
+        if (!it.tailDone) it.tailRecv = 0;
+        items.push(it);
+      } catch (e) {}
     });
     // files nobody lists any more (crash between write and save)
     try {
@@ -106,7 +116,7 @@
     var pos = 0;
     while (pos + 8 <= len) {
       var sz = buf.readUInt32BE(pos), type = buf.toString('ascii', pos + 4, pos + 8);
-      if (type === 'moov') { it.fast = true; return; }
+      if (type === 'moov') { it.fast = true; it.moovOff = pos; it.moovSize = sz === 1 ? buf.readUInt32BE(pos + 8) * 4294967296 + buf.readUInt32BE(pos + 12) : sz; return; }
       if (type === 'mdat') { it.fast = false; return; }
       if (sz === 1) { if (pos + 16 > len) return; sz = buf.readUInt32BE(pos + 8) * 4294967296 + buf.readUInt32BE(pos + 12); }
       if (sz < 8) { it.fast = false; return; }
@@ -114,11 +124,92 @@
     }
     if (it.recv >= 4 * 1048576 || it.done) it.fast = false; // index not found near the start: play when complete
   }
-  // ready to play: whole file, or a fast-start file with a few MB in hand
-  function playable(it) { return it.done || (it.fast === true && it.recv >= Math.min(it.size, 3 * 1048576)); }
+  /* The phone sends the index (moov) first when it sits at the END of the file (normal phone/Telegram MP4s): the "tail"
+     goes to its place in the file, then the rest from the start. AVPlay then has the index at once and plays while the
+     rest arrives, like a fast-start file. */
+  function headLimit(it) { return it.tailStart !== undefined && it.tailStart !== null ? it.tailStart : it.size; }
+  function checkTail(it) {
+    var b = new Buffer(16), fd;
+    try { fd = fs.openSync(fileOf(it), 'r'); fs.readSync(fd, b, 0, 16, it.tailStart); } catch (e) { return; } finally { try { if (fd !== undefined) fs.closeSync(fd); } catch (e) {} }
+    if (b.toString('ascii', 4, 8) !== 'moov') { it.tailMoov = false; return; }
+    var sz = b.readUInt32BE(0); if (sz === 1) sz = b.readUInt32BE(8) * 4294967296 + b.readUInt32BE(12);
+    it.tailMoov = true; it.moovOff = it.tailStart; it.moovSize = sz;
+  }
+  // video size and rotation from the MP4 index: phones store portrait/rotated video as a rotation matrix in the
+  // track header (tkhd), which AVPlay does not apply by itself
+  function kids(buf, s, e, cb) {
+    var p = s;
+    while (p + 8 <= e) {
+      var sz = buf.readUInt32BE(p), t = buf.toString('ascii', p + 4, p + 8), h = 8;
+      if (sz === 1) { if (p + 16 > e) return; sz = buf.readUInt32BE(p + 8) * 4294967296 + buf.readUInt32BE(p + 12); h = 16; }
+      else if (sz === 0) sz = e - p;
+      if (sz < h || p + sz > e) return;
+      cb(t, p + h, p + sz); p += sz;
+    }
+  }
+  function parseMoov(buf) {
+    var out = null;
+    kids(buf, 0, buf.length, function (t, s, e) {
+      if (t !== 'moov') return;
+      kids(buf, s, e, function (t2, s2, e2) {
+        if (t2 !== 'trak' || out) return;
+        kids(buf, s2, e2, function (t3, s3, e3) {
+          if (t3 !== 'tkhd' || out) return;
+          var base = s3 + 4 + (buf[s3] === 1 ? 32 : 20) + 16;
+          if (base + 44 > e3) return;
+          var a = buf.readInt32BE(base), b = buf.readInt32BE(base + 4), c = buf.readInt32BE(base + 12), d = buf.readInt32BE(base + 16);
+          var w = buf.readUInt32BE(base + 36) / 65536, h = buf.readUInt32BE(base + 40) / 65536;
+          if (!(w > 0 && h > 0)) return;                       // audio track
+          var r = 0, O = 65536;
+          if (a === 0 && b === O && c === -O && d === 0) r = 90;
+          else if (a === -O && d === -O && b === 0 && c === 0) r = 180;
+          else if (a === 0 && b === -O && c === O && d === 0) r = 270;
+          out = { rot: r, w: Math.round(w), h: Math.round(h) };
+        });
+      });
+    });
+    return out;
+  }
+  function meta(it) {
+    if (it.metaDone || !/^(mp4|m4v|mov|3gp)$/.test(it.ext)) return;
+    if ((it.moovOff === undefined || it.moovOff === null) && it.done) {   // index at the end, no tail sent: look for it
+      var fd0, hb = new Buffer(16), p = 0, n = 0;
+      try {
+        fd0 = fs.openSync(fileOf(it), 'r');
+        while (p + 8 <= it.size && n++ < 200) {
+          fs.readSync(fd0, hb, 0, 16, p);
+          var sz = hb.readUInt32BE(0), t = hb.toString('ascii', 4, 8);
+          if (sz === 1) sz = hb.readUInt32BE(8) * 4294967296 + hb.readUInt32BE(12); else if (sz === 0) sz = it.size - p;
+          if (t === 'moov') { it.moovOff = p; it.moovSize = sz; break; }
+          if (sz < 8) break;
+          p += sz;
+        }
+      } catch (e) {} finally { try { if (fd0 !== undefined) fs.closeSync(fd0); } catch (e) {} }
+    }
+    if (it.moovOff === undefined || it.moovOff === null) { if (it.done) it.metaDone = true; return; }
+    var have = it.done || (it.moovOff + it.moovSize <= it.recv) || (it.tailDone && it.moovOff >= it.tailStart);
+    if (!have) return;
+    it.metaDone = true;
+    if (!(it.moovSize > 0) || it.moovSize > 32 * 1048576) return;
+    var buf = new Buffer(it.moovSize), fd;
+    try { fd = fs.openSync(fileOf(it), 'r'); fs.readSync(fd, buf, 0, it.moovSize, it.moovOff); } catch (e) { return; } finally { try { if (fd !== undefined) fs.closeSync(fd); } catch (e) {} }
+    try { var m = parseMoov(buf); if (m) { it.rot = m.rot; it.vw = m.w; it.vh = m.h; log('video ' + m.w + 'x' + m.h + (m.rot ? ' rotated ' + m.rot : '')); } } catch (e) { log('moov ' + e.message); }
+  }
+  // ready to play: whole file, or the index plus a few MB from the start (fast start, or index sent first)
+  function playable(it) {
+    if (it.done) return true;
+    if (it.fast === true && it.recv >= Math.min(it.size, 3 * 1048576)) return true;
+    return !!(it.tailDone && it.tailMoov && it.recv >= Math.min(it.tailStart, 3 * 1048576));
+  }
   function maybeAutoplay(it) {
     if (!it.auto || it.autoSent || !playable(it)) return;
+    meta(it);
     it.autoSent = true; requestPlay(it);
+  }
+  function finishIfComplete(it) {
+    if (it.done || !it.size || it.recv < headLimit(it)) return;
+    if (it.tailStart !== undefined && it.tailStart !== null && !it.tailDone) return;
+    it.done = true; it.rate = 0; checkFast(it); meta(it); maybeAutoplay(it); log('complete ' + it.name);
   }
   function requestPlay(it) { playReq = { n: playReq.n + 1, id: it.id, t: Date.now() }; log('play ' + it.name); }
 
@@ -156,27 +247,33 @@
     return 'mp4';
   }
   function pub(it) {
-    return { id: it.id, name: it.name, size: it.size, recv: it.recv, done: !!it.done, t: it.t, ext: it.ext, rate: it.req ? it.rate || 0 : 0,
-      busy: !!it.req, fast: it.fast === true, ready: playable(it), err: it.err || '' };
+    return { id: it.id, name: it.name, size: it.size, recv: it.done ? it.size : it.recv + (it.tailRecv || 0), done: !!it.done, t: it.t, ext: it.ext,
+      rate: it.req ? it.rate || 0 : 0, busy: !!it.req, fast: it.fast === true || !!it.tailMoov, ready: playable(it), err: it.err || '',
+      rot: it.rot || 0, w: it.vw || 0, h: it.vh || 0 };
   }
 
   /* ---------- upload (resumable, raw body) ---------- */
   function upload(req, res, id, q) {
-    var off = parseInt(q.off, 10) || 0, size = parseInt(q.size, 10) || 0, it = byId(id);
+    var off = parseInt(q.off, 10) || 0, size = parseInt(q.size, 10) || 0, it = byId(id), tail = q.part === 'tail';
     if (!it) {
-      if (off !== 0) return json(res, 409, { recv: 0, err: 'gone' });
+      if (off !== 0 && !tail) return json(res, 409, { recv: 0, err: 'gone' });
       if (!makeRoom(size, null)) return json(res, 507, { err: 'space', free: freeBytes() });
       var name = String(q.name || 'video').slice(0, 160);
       it = { id: id, name: name, type: String(q.type || ''), ext: extOf(name, q.type), size: size, recv: 0, done: false, t: Date.now(), gen: 0, auto: q.auto === '1' };
       items.push(it); save(); log('upload ' + name + ' ' + Math.round(size / 1048576) + ' MB');
     } else if (q.auto === '1') it.auto = true;
-    if (it.done) return json(res, 200, { recv: it.recv, done: true });
-    if (off > it.recv) return json(res, 409, { recv: it.recv });
+    if (it.done) return json(res, 200, { recv: it.recv, done: true, tailDone: !!it.tailDone });
+    if (tail) {
+      if (!(off > 0 && off < it.size)) return json(res, 400, { err: 'tail' });
+      it.tailStart = off; it.tailRecv = 0; it.tailDone = false; it.tailMoov = false;
+    } else if (off > it.recv) return json(res, 409, { recv: it.recv, tailDone: !!it.tailDone });
     if (it.req && it.req !== req) { try { it.req.destroy(); } catch (e) {} }   // an older, broken attempt
     var gen = it.gen = (it.gen || 0) + 1, finished = false, gotEnd = false;
-    it.req = req; it.recv = off; it.err = '';
-    var ws = fs.createWriteStream(fileOf(it), { flags: off === 0 ? 'w' : 'r+', start: off });
-    var win = { t: Date.now(), b: off };
+    it.req = req; it.err = ''; if (!tail) it.recv = off;
+    // r+ keeps what is already there (the tail when it came first); a new file needs w
+    var ws = fs.createWriteStream(fileOf(it), { flags: fs.existsSync(fileOf(it)) ? 'r+' : 'w', start: off });
+    function got() { return it.recv + (it.tailRecv || 0); }
+    var win = { t: Date.now(), b: got() };
     function end(st, o) {
       if (finished) return; finished = true;
       if (it.req === req) it.req = null;
@@ -192,20 +289,26 @@
       if (it.gen !== gen) return;
       var ok = ws.write(ch, safe(function () {
         if (it.gen !== gen) return;
-        it.recv += ch.length;
+        if (tail) it.tailRecv += ch.length; else it.recv += ch.length;
         var now = Date.now();
-        if (now - win.t >= 1000) { it.rate = Math.round((it.recv - win.b) * 1000 / (now - win.t)); win.t = now; win.b = it.recv; }
-        if (!it.fast && it.fast !== false) checkFast(it);
-        maybeAutoplay(it);
+        if (now - win.t >= 1000) { it.rate = Math.round((got() - win.b) * 1000 / (now - win.t)); win.t = now; win.b = got(); }
+        if (!tail) {
+          if (!it.fast && it.fast !== false) checkFast(it);
+          if (!it.metaDone && it.fast && it.moovOff !== undefined && it.recv >= it.moovOff + it.moovSize) meta(it);
+          maybeAutoplay(it);
+        }
       }));
       if (!ok) { req.pause(); ws.once('drain', function () { req.resume(); }); }
     }));
     req.on('end', safe(function () {
       gotEnd = true;
       ws.end(safe(function () {
-        if (it.gen !== gen) return end(200, { recv: it.recv });
-        if (!it.size || it.recv >= it.size) { it.size = it.recv; it.done = true; it.rate = 0; checkFast(it); maybeAutoplay(it); log('complete ' + it.name); }
-        end(200, { recv: it.recv, done: it.done });
+        if (it.gen !== gen) return end(200, { recv: it.recv, tailDone: !!it.tailDone });
+        if (tail) {
+          if (off + it.tailRecv >= it.size) { it.tailDone = true; checkTail(it); meta(it); log('index first: ' + Math.round(it.tailRecv / 1024) + ' KB'); maybeAutoplay(it); }
+        } else if (!it.size) it.size = it.recv;
+        finishIfComplete(it);
+        end(200, { recv: it.recv, done: !!it.done, tailDone: !!it.tailDone });
       }));
     }));
     req.on('close', safe(function () { if (!finished && !gotEnd) { try { ws.end(); } catch (e) {} if (it.req === req) it.req = null; save(); log('upload interrupted at ' + Math.round(it.recv / 1048576) + ' MB'); } }));
@@ -225,15 +328,17 @@
     if (st === 206) h['Content-Range'] = 'bytes ' + start + '-' + end + '/' + total;
     res.writeHead(st, head(h));
     if (req.method === 'HEAD') return res.end();
-    var pos = start, fd = null, closed = false, waitT = 0, lastGain = Date.now(), lastRecv = it.recv;
+    var pos = start, fd = null, closed = false, waitT = 0, lastGain = Date.now(), lastRecv = -1;
     function close() { closed = true; clearTimeout(waitT); if (fd !== null) { var f = fd; fd = null; fs.close(f, function () {}); } }
     res.on('close', close);
     var step = safe(function () {
       if (closed) return;
       if (pos > end) { close(); return res.end(); }
       if (byId(it.id) !== it) { close(); return res.destroy(); }               // deleted meanwhile
-      var avail = it.done ? total : it.recv;
-      if (it.recv !== lastRecv) { lastRecv = it.recv; lastGain = Date.now(); }
+      // bytes on disk: the head from 0, and the tail once complete
+      var hl = it.done ? total : it.recv, avail = pos < hl ? hl : (!it.done && it.tailDone && pos >= it.tailStart ? total : pos);
+      var gotNow = it.recv + (it.tailRecv || 0);
+      if (gotNow !== lastRecv) { lastRecv = gotNow; lastGain = Date.now(); }
       if (pos >= avail) {
         if (Date.now() - lastGain > STALL_MS) { log('stream gave up waiting at ' + Math.round(pos / 1048576) + ' MB'); close(); return res.destroy(); }
         waitT = setTimeout(step, 250); return;
@@ -283,13 +388,13 @@
     var id = String(parts[2] || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40), it = id ? byId(id) : null;
     if (parts[1] === 'up' && id) {
       if (req.method === 'POST') return upload(req, res, id, q);
-      return json(res, 200, it ? { recv: it.recv, size: it.size, done: !!it.done } : { recv: 0, gone: true });
+      return json(res, 200, it ? { recv: it.recv, size: it.size, done: !!it.done, tailStart: it.tailStart, tailDone: !!it.tailDone } : { recv: 0, gone: true });
     }
     if (req.method !== 'POST') return json(res, 405, { err: 'method' });
     if (parts[1] === 'play') { if (!it) return json(res, 404, { err: 'gone' }); requestPlay(it); return json(res, 200, { ok: true, ready: playable(it) }); }
     if (parts[1] === 'del') { if (it) { remove(it); save(); log('deleted ' + it.name); } return json(res, 200, { ok: true }); }
     if (parts[1] === 'ctl') {
-      var a = String(q.a || ''); if (!/^(toggle|back|fwd|stop)$/.test(a)) return json(res, 400, { err: 'a' });
+      var a = String(q.a || ''); if (!/^(toggle|back|fwd|stop|rot)$/.test(a)) return json(res, 400, { err: 'a' });
       ctlReq = { n: ctlReq.n + 1, a: a, t: Date.now() }; return json(res, 200, { ok: true });
     }
     if (parts[1] === 'newcode' && local) { code = String(1000 + Math.floor(Math.random() * 9000)); save(); return json(res, 200, { code: code }); }

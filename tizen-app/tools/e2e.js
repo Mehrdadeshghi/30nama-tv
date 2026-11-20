@@ -68,7 +68,7 @@ var AVPLAY = function () {
   window.webapis = { avplay: {
     open: function (u) { A.url = u; A.cur = 0; A.playing = false; A.state = 'IDLE'; A.opened.push(u); A.firstSeekDone = false; },
     close: function () { A.state = 'NONE'; A.playing = false; },
-    setDisplayRect: function () {}, setDisplayMethod: function () {},
+    setDisplayRect: function () {}, setDisplayMethod: function () {}, setDisplayRotation: function (r) { A.rotation = r; },
     setListener: function (l) { A.l = l; },
     prepareAsync: function (ok, err) { setTimeout(function () { if (A.mode.failPrepare) { if (err) err('PLAYER_ERROR_CONNECTION_FAILED'); return; } A.state = 'READY'; if (ok) ok(); }, 150); },
     getDuration: function () { return A.dur; },
@@ -555,6 +555,21 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
       await waitFor(page, function () { return N.player.open; }, 5000, 'tile plays');
       await closePlayer(page);
       ok(!FAKE.calls.some(function (c) { return c.name === 'observer'; }), 'no observer report for a phone video');
+      // portrait phone video, index at the end, sent index-first: plays turned by 90°, the turn button and the phone's
+      // rotate command change it and the choice is kept for this video
+      function tk(w, h, r) { var t = Buffer.alloc(92), O = 65536, m = r ? [0, O, 0, -O, 0, 0, 0, 0, 0x40000000] : [O, 0, 0, 0, O, 0, 0, 0, 0x40000000]; t.writeUInt32BE(92, 0); t.write('tkhd', 4, 'ascii'); for (var i = 0; i < 9; i++) t.writeInt32BE(m[i], 48 + i * 4); t.writeUInt32BE(w * 65536, 84); t.writeUInt32BE(h * 65536, 88); return t; }
+      function wr(t, body) { var h = Buffer.alloc(8); h.writeUInt32BE(8 + body.length, 0); h.write(t, 4, 'ascii'); return Buffer.concat([h, body]); }
+      var mv = wr('moov', wr('trak', tk(1920, 1080, 90))), pv = Buffer.concat([bx('ftyp', 32), bx('mdat', 5000000), mv]), ts = pv.length - mv.length;
+      var qp = '/api/up/e2e2?k=' + code + '&auto=1&size=' + pv.length + '&name=portrait.mp4';
+      await call('POST', qp + '&part=tail&off=' + ts, pv.slice(ts), true);
+      var up2 = call('POST', qp + '&off=0', pv.slice(0, ts), true);
+      await waitFor(page, function () { return N.player.open && /e2e2\.mp4$/.test(window.__av.url || ''); }, 10000, 'portrait video plays before the upload is done');
+      ok(await page.evaluate(function () { return N.player.rot === 90 && window.__av.rotation === 'PLAYER_DISPLAY_ROTATION_90' && !!document.querySelector('#osd-btns [data-k], #osd-btns .btn') ; }), 'turned by 90° from the file');
+      await page.evaluate(function () { N.player.rotate(); });
+      ok(await page.evaluate(function () { return N.player.rot === 180 && window.__av.rotation === 'PLAYER_DISPLAY_ROTATION_180' && N.store.get('phone.rot', {}).e2e2 === 180; }), 'turn button: 180°, remembered');
+      await call('POST', '/api/ctl?a=rot&k=' + code, null, true);
+      await waitFor(page, function () { return N.player.rot === 270; }, 5000, 'rotate from the phone');
+      await closePlayer(page); await up2;
       return page;
     } finally { try { process.__n30phone.server.close(); } catch (e) {} }
   });

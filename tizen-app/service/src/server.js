@@ -50,7 +50,11 @@
   function idxFile() { return path.join(DIR, 'index.json'); }
   function save() {
     if (!DIR) return;
-    var out = items.map(function (it) { return { id: it.id, name: it.name, type: it.type, ext: it.ext, size: it.size, recv: it.recv, done: it.done, t: it.t, fast: it.fast }; });
+    var out = items.map(function (it) {
+      return { id: it.id, name: it.name, type: it.type, ext: it.ext, size: it.size, recv: it.recv, done: it.done, t: it.t, fast: it.fast,
+        tailStart: it.tailStart, tailRecv: it.tailRecv, tailDone: it.tailDone, tailMoov: it.tailMoov, moovOff: it.moovOff, moovSize: it.moovSize,
+        metaDone: it.metaDone, rot: it.rot, vw: it.vw, vh: it.vh };
+    });
     try { fs.writeFileSync(idxFile(), JSON.stringify({ code: code, items: out })); } catch (e) { log('save ' + e.message); }
   }
   function fileOf(it) { return path.join(DIR, it.id + '.' + it.ext); }
@@ -60,7 +64,13 @@
     code = j && /^\d{4}$/.test(j.code) ? j.code : String(1000 + Math.floor(Math.random() * 9000));
     items = [];
     ((j && j.items) || []).forEach(function (it) {
-      try { var st = fs.statSync(fileOf(it)); it.recv = Math.min(st.size, it.size || st.size); it.gen = 0; items.push(it); } catch (e) {}
+      try {
+        var st = fs.statSync(fileOf(it));
+        // head bytes as saved (the file can be longer: a tail sent first makes it sparse)
+        it.recv = it.done ? it.size : Math.min(it.recv || 0, st.size); it.gen = 0;
+        if (!it.tailDone) it.tailRecv = 0;
+        items.push(it);
+      } catch (e) {}
     });
     // files nobody lists any more (crash between write and save)
     try {
@@ -105,7 +115,7 @@
     var pos = 0;
     while (pos + 8 <= len) {
       var sz = buf.readUInt32BE(pos), type = buf.toString('ascii', pos + 4, pos + 8);
-      if (type === 'moov') { it.fast = true; return; }
+      if (type === 'moov') { it.fast = true; it.moovOff = pos; it.moovSize = sz === 1 ? buf.readUInt32BE(pos + 8) * 4294967296 + buf.readUInt32BE(pos + 12) : sz; return; }
       if (type === 'mdat') { it.fast = false; return; }
       if (sz === 1) { if (pos + 16 > len) return; sz = buf.readUInt32BE(pos + 8) * 4294967296 + buf.readUInt32BE(pos + 12); }
       if (sz < 8) { it.fast = false; return; }
@@ -113,11 +123,92 @@
     }
     if (it.recv >= 4 * 1048576 || it.done) it.fast = false; // index not found near the start: play when complete
   }
-  // ready to play: whole file, or a fast-start file with a few MB in hand
-  function playable(it) { return it.done || (it.fast === true && it.recv >= Math.min(it.size, 3 * 1048576)); }
+  /* The phone sends the index (moov) first when it sits at the END of the file (normal phone/Telegram MP4s): the "tail"
+     goes to its place in the file, then the rest from the start. AVPlay then has the index at once and plays while the
+     rest arrives, like a fast-start file. */
+  function headLimit(it) { return it.tailStart !== undefined && it.tailStart !== null ? it.tailStart : it.size; }
+  function checkTail(it) {
+    var b = new Buffer(16), fd;
+    try { fd = fs.openSync(fileOf(it), 'r'); fs.readSync(fd, b, 0, 16, it.tailStart); } catch (e) { return; } finally { try { if (fd !== undefined) fs.closeSync(fd); } catch (e) {} }
+    if (b.toString('ascii', 4, 8) !== 'moov') { it.tailMoov = false; return; }
+    var sz = b.readUInt32BE(0); if (sz === 1) sz = b.readUInt32BE(8) * 4294967296 + b.readUInt32BE(12);
+    it.tailMoov = true; it.moovOff = it.tailStart; it.moovSize = sz;
+  }
+  // video size and rotation from the MP4 index: phones store portrait/rotated video as a rotation matrix in the
+  // track header (tkhd), which AVPlay does not apply by itself
+  function kids(buf, s, e, cb) {
+    var p = s;
+    while (p + 8 <= e) {
+      var sz = buf.readUInt32BE(p), t = buf.toString('ascii', p + 4, p + 8), h = 8;
+      if (sz === 1) { if (p + 16 > e) return; sz = buf.readUInt32BE(p + 8) * 4294967296 + buf.readUInt32BE(p + 12); h = 16; }
+      else if (sz === 0) sz = e - p;
+      if (sz < h || p + sz > e) return;
+      cb(t, p + h, p + sz); p += sz;
+    }
+  }
+  function parseMoov(buf) {
+    var out = null;
+    kids(buf, 0, buf.length, function (t, s, e) {
+      if (t !== 'moov') return;
+      kids(buf, s, e, function (t2, s2, e2) {
+        if (t2 !== 'trak' || out) return;
+        kids(buf, s2, e2, function (t3, s3, e3) {
+          if (t3 !== 'tkhd' || out) return;
+          var base = s3 + 4 + (buf[s3] === 1 ? 32 : 20) + 16;
+          if (base + 44 > e3) return;
+          var a = buf.readInt32BE(base), b = buf.readInt32BE(base + 4), c = buf.readInt32BE(base + 12), d = buf.readInt32BE(base + 16);
+          var w = buf.readUInt32BE(base + 36) / 65536, h = buf.readUInt32BE(base + 40) / 65536;
+          if (!(w > 0 && h > 0)) return;                       // audio track
+          var r = 0, O = 65536;
+          if (a === 0 && b === O && c === -O && d === 0) r = 90;
+          else if (a === -O && d === -O && b === 0 && c === 0) r = 180;
+          else if (a === 0 && b === -O && c === O && d === 0) r = 270;
+          out = { rot: r, w: Math.round(w), h: Math.round(h) };
+        });
+      });
+    });
+    return out;
+  }
+  function meta(it) {
+    if (it.metaDone || !/^(mp4|m4v|mov|3gp)$/.test(it.ext)) return;
+    if ((it.moovOff === undefined || it.moovOff === null) && it.done) {   // index at the end, no tail sent: look for it
+      var fd0, hb = new Buffer(16), p = 0, n = 0;
+      try {
+        fd0 = fs.openSync(fileOf(it), 'r');
+        while (p + 8 <= it.size && n++ < 200) {
+          fs.readSync(fd0, hb, 0, 16, p);
+          var sz = hb.readUInt32BE(0), t = hb.toString('ascii', 4, 8);
+          if (sz === 1) sz = hb.readUInt32BE(8) * 4294967296 + hb.readUInt32BE(12); else if (sz === 0) sz = it.size - p;
+          if (t === 'moov') { it.moovOff = p; it.moovSize = sz; break; }
+          if (sz < 8) break;
+          p += sz;
+        }
+      } catch (e) {} finally { try { if (fd0 !== undefined) fs.closeSync(fd0); } catch (e) {} }
+    }
+    if (it.moovOff === undefined || it.moovOff === null) { if (it.done) it.metaDone = true; return; }
+    var have = it.done || (it.moovOff + it.moovSize <= it.recv) || (it.tailDone && it.moovOff >= it.tailStart);
+    if (!have) return;
+    it.metaDone = true;
+    if (!(it.moovSize > 0) || it.moovSize > 32 * 1048576) return;
+    var buf = new Buffer(it.moovSize), fd;
+    try { fd = fs.openSync(fileOf(it), 'r'); fs.readSync(fd, buf, 0, it.moovSize, it.moovOff); } catch (e) { return; } finally { try { if (fd !== undefined) fs.closeSync(fd); } catch (e) {} }
+    try { var m = parseMoov(buf); if (m) { it.rot = m.rot; it.vw = m.w; it.vh = m.h; log('video ' + m.w + 'x' + m.h + (m.rot ? ' rotated ' + m.rot : '')); } } catch (e) { log('moov ' + e.message); }
+  }
+  // ready to play: whole file, or the index plus a few MB from the start (fast start, or index sent first)
+  function playable(it) {
+    if (it.done) return true;
+    if (it.fast === true && it.recv >= Math.min(it.size, 3 * 1048576)) return true;
+    return !!(it.tailDone && it.tailMoov && it.recv >= Math.min(it.tailStart, 3 * 1048576));
+  }
   function maybeAutoplay(it) {
     if (!it.auto || it.autoSent || !playable(it)) return;
+    meta(it);
     it.autoSent = true; requestPlay(it);
+  }
+  function finishIfComplete(it) {
+    if (it.done || !it.size || it.recv < headLimit(it)) return;
+    if (it.tailStart !== undefined && it.tailStart !== null && !it.tailDone) return;
+    it.done = true; it.rate = 0; checkFast(it); meta(it); maybeAutoplay(it); log('complete ' + it.name);
   }
   function requestPlay(it) { playReq = { n: playReq.n + 1, id: it.id, t: Date.now() }; log('play ' + it.name); }
 
@@ -155,27 +246,33 @@
     return 'mp4';
   }
   function pub(it) {
-    return { id: it.id, name: it.name, size: it.size, recv: it.recv, done: !!it.done, t: it.t, ext: it.ext, rate: it.req ? it.rate || 0 : 0,
-      busy: !!it.req, fast: it.fast === true, ready: playable(it), err: it.err || '' };
+    return { id: it.id, name: it.name, size: it.size, recv: it.done ? it.size : it.recv + (it.tailRecv || 0), done: !!it.done, t: it.t, ext: it.ext,
+      rate: it.req ? it.rate || 0 : 0, busy: !!it.req, fast: it.fast === true || !!it.tailMoov, ready: playable(it), err: it.err || '',
+      rot: it.rot || 0, w: it.vw || 0, h: it.vh || 0 };
   }
 
   /* ---------- upload (resumable, raw body) ---------- */
   function upload(req, res, id, q) {
-    var off = parseInt(q.off, 10) || 0, size = parseInt(q.size, 10) || 0, it = byId(id);
+    var off = parseInt(q.off, 10) || 0, size = parseInt(q.size, 10) || 0, it = byId(id), tail = q.part === 'tail';
     if (!it) {
-      if (off !== 0) return json(res, 409, { recv: 0, err: 'gone' });
+      if (off !== 0 && !tail) return json(res, 409, { recv: 0, err: 'gone' });
       if (!makeRoom(size, null)) return json(res, 507, { err: 'space', free: freeBytes() });
       var name = String(q.name || 'video').slice(0, 160);
       it = { id: id, name: name, type: String(q.type || ''), ext: extOf(name, q.type), size: size, recv: 0, done: false, t: Date.now(), gen: 0, auto: q.auto === '1' };
       items.push(it); save(); log('upload ' + name + ' ' + Math.round(size / 1048576) + ' MB');
     } else if (q.auto === '1') it.auto = true;
-    if (it.done) return json(res, 200, { recv: it.recv, done: true });
-    if (off > it.recv) return json(res, 409, { recv: it.recv });
+    if (it.done) return json(res, 200, { recv: it.recv, done: true, tailDone: !!it.tailDone });
+    if (tail) {
+      if (!(off > 0 && off < it.size)) return json(res, 400, { err: 'tail' });
+      it.tailStart = off; it.tailRecv = 0; it.tailDone = false; it.tailMoov = false;
+    } else if (off > it.recv) return json(res, 409, { recv: it.recv, tailDone: !!it.tailDone });
     if (it.req && it.req !== req) { try { it.req.destroy(); } catch (e) {} }   // an older, broken attempt
     var gen = it.gen = (it.gen || 0) + 1, finished = false, gotEnd = false;
-    it.req = req; it.recv = off; it.err = '';
-    var ws = fs.createWriteStream(fileOf(it), { flags: off === 0 ? 'w' : 'r+', start: off });
-    var win = { t: Date.now(), b: off };
+    it.req = req; it.err = ''; if (!tail) it.recv = off;
+    // r+ keeps what is already there (the tail when it came first); a new file needs w
+    var ws = fs.createWriteStream(fileOf(it), { flags: fs.existsSync(fileOf(it)) ? 'r+' : 'w', start: off });
+    function got() { return it.recv + (it.tailRecv || 0); }
+    var win = { t: Date.now(), b: got() };
     function end(st, o) {
       if (finished) return; finished = true;
       if (it.req === req) it.req = null;
@@ -191,20 +288,26 @@
       if (it.gen !== gen) return;
       var ok = ws.write(ch, safe(function () {
         if (it.gen !== gen) return;
-        it.recv += ch.length;
+        if (tail) it.tailRecv += ch.length; else it.recv += ch.length;
         var now = Date.now();
-        if (now - win.t >= 1000) { it.rate = Math.round((it.recv - win.b) * 1000 / (now - win.t)); win.t = now; win.b = it.recv; }
-        if (!it.fast && it.fast !== false) checkFast(it);
-        maybeAutoplay(it);
+        if (now - win.t >= 1000) { it.rate = Math.round((got() - win.b) * 1000 / (now - win.t)); win.t = now; win.b = got(); }
+        if (!tail) {
+          if (!it.fast && it.fast !== false) checkFast(it);
+          if (!it.metaDone && it.fast && it.moovOff !== undefined && it.recv >= it.moovOff + it.moovSize) meta(it);
+          maybeAutoplay(it);
+        }
       }));
       if (!ok) { req.pause(); ws.once('drain', function () { req.resume(); }); }
     }));
     req.on('end', safe(function () {
       gotEnd = true;
       ws.end(safe(function () {
-        if (it.gen !== gen) return end(200, { recv: it.recv });
-        if (!it.size || it.recv >= it.size) { it.size = it.recv; it.done = true; it.rate = 0; checkFast(it); maybeAutoplay(it); log('complete ' + it.name); }
-        end(200, { recv: it.recv, done: it.done });
+        if (it.gen !== gen) return end(200, { recv: it.recv, tailDone: !!it.tailDone });
+        if (tail) {
+          if (off + it.tailRecv >= it.size) { it.tailDone = true; checkTail(it); meta(it); log('index first: ' + Math.round(it.tailRecv / 1024) + ' KB'); maybeAutoplay(it); }
+        } else if (!it.size) it.size = it.recv;
+        finishIfComplete(it);
+        end(200, { recv: it.recv, done: !!it.done, tailDone: !!it.tailDone });
       }));
     }));
     req.on('close', safe(function () { if (!finished && !gotEnd) { try { ws.end(); } catch (e) {} if (it.req === req) it.req = null; save(); log('upload interrupted at ' + Math.round(it.recv / 1048576) + ' MB'); } }));
@@ -224,15 +327,17 @@
     if (st === 206) h['Content-Range'] = 'bytes ' + start + '-' + end + '/' + total;
     res.writeHead(st, head(h));
     if (req.method === 'HEAD') return res.end();
-    var pos = start, fd = null, closed = false, waitT = 0, lastGain = Date.now(), lastRecv = it.recv;
+    var pos = start, fd = null, closed = false, waitT = 0, lastGain = Date.now(), lastRecv = -1;
     function close() { closed = true; clearTimeout(waitT); if (fd !== null) { var f = fd; fd = null; fs.close(f, function () {}); } }
     res.on('close', close);
     var step = safe(function () {
       if (closed) return;
       if (pos > end) { close(); return res.end(); }
       if (byId(it.id) !== it) { close(); return res.destroy(); }               // deleted meanwhile
-      var avail = it.done ? total : it.recv;
-      if (it.recv !== lastRecv) { lastRecv = it.recv; lastGain = Date.now(); }
+      // bytes on disk: the head from 0, and the tail once complete
+      var hl = it.done ? total : it.recv, avail = pos < hl ? hl : (!it.done && it.tailDone && pos >= it.tailStart ? total : pos);
+      var gotNow = it.recv + (it.tailRecv || 0);
+      if (gotNow !== lastRecv) { lastRecv = gotNow; lastGain = Date.now(); }
       if (pos >= avail) {
         if (Date.now() - lastGain > STALL_MS) { log('stream gave up waiting at ' + Math.round(pos / 1048576) + ' MB'); close(); return res.destroy(); }
         waitT = setTimeout(step, 250); return;
@@ -282,13 +387,13 @@
     var id = String(parts[2] || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40), it = id ? byId(id) : null;
     if (parts[1] === 'up' && id) {
       if (req.method === 'POST') return upload(req, res, id, q);
-      return json(res, 200, it ? { recv: it.recv, size: it.size, done: !!it.done } : { recv: 0, gone: true });
+      return json(res, 200, it ? { recv: it.recv, size: it.size, done: !!it.done, tailStart: it.tailStart, tailDone: !!it.tailDone } : { recv: 0, gone: true });
     }
     if (req.method !== 'POST') return json(res, 405, { err: 'method' });
     if (parts[1] === 'play') { if (!it) return json(res, 404, { err: 'gone' }); requestPlay(it); return json(res, 200, { ok: true, ready: playable(it) }); }
     if (parts[1] === 'del') { if (it) { remove(it); save(); log('deleted ' + it.name); } return json(res, 200, { ok: true }); }
     if (parts[1] === 'ctl') {
-      var a = String(q.a || ''); if (!/^(toggle|back|fwd|stop)$/.test(a)) return json(res, 400, { err: 'a' });
+      var a = String(q.a || ''); if (!/^(toggle|back|fwd|stop|rot)$/.test(a)) return json(res, 400, { err: 'a' });
       ctlReq = { n: ctlReq.n + 1, a: a, t: Date.now() }; return json(res, 200, { ok: true });
     }
     if (parts[1] === 'newcode' && local) { code = String(1000 + Math.floor(Math.random() * 9000)); save(); return json(res, 200, { code: code }); }

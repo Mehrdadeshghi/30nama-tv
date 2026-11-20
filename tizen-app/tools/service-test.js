@@ -103,6 +103,41 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   await rq('POST', '/api/del/a1?k=' + CODE, { lan: true });
   ok(!fs.existsSync(path.join(DATA, 'a1.mp4')) && (await rq('GET', '/v/a1.mp4')).st === 404, 'delete removes file');
 
+  // index at the END (normal phone MP4): the phone sends that part first, the TV plays while the rest arrives;
+  // rotation from the video track header (portrait phone video = 90°)
+  function tkhd(w, h, rot) {
+    var b = Buffer.alloc(92); b.writeUInt32BE(92, 0); b.write('tkhd', 4, 'ascii');
+    var base = 8 + 4 + 20 + 16, O = 65536, m = rot === 90 ? [0, O, 0, -O, 0, 0, 0, 0, 0x40000000] : [O, 0, 0, 0, O, 0, 0, 0, 0x40000000];
+    for (var i = 0; i < 9; i++) b.writeInt32BE(m[i], base + i * 4);
+    b.writeUInt32BE(w * 65536, base + 36); b.writeUInt32BE(h * 65536, base + 40); return b;
+  }
+  function wrap(type, body) { var h = Buffer.alloc(8); h.writeUInt32BE(8 + body.length, 0); h.write(type, 4, 'ascii'); return Buffer.concat([h, body]); }
+  var audioTrak = wrap('trak', tkhd(0, 0, 0)), videoTrak = wrap('trak', tkhd(1920, 1080, 90));
+  var moov = wrap('moov', Buffer.concat([audioTrak, videoTrak, box('udta', 3000)]));
+  var tailFile = Buffer.concat([box('ftyp', 32), box('mdat', 6000000), moov]), tStart = tailFile.length - moov.length;
+  var qq = '?k=' + CODE + '&size=' + tailFile.length + '&name=phone.mp4&auto=1';
+  var tr = await rq('POST', '/api/up/t9' + qq + '&part=tail&off=' + tStart, { lan: true, body: tailFile.slice(tStart) });
+  ok(tr.st === 200 && tr.j.tailDone && !tr.j.done, 'index part accepted first');
+  var nBefore = (await rq('GET', '/api/state')).j.play.n;
+  var headP = rq('POST', '/api/up/t9' + qq + '&off=0', { lan: true, body: tailFile.slice(0, tStart), slow: 96 * 1024 });
+  var t9 = null;
+  for (var k = 0; k < 60; k++) { await sleep(100); s = await rq('GET', '/api/state'); if (s.j.play.n > nBefore) { t9 = s.j.items.filter(function (x) { return x.id === 't9'; })[0]; break; } }
+  ok(t9 && !t9.done && t9.ready && t9.rot === 90 && t9.w === 1920 && t9.h === 1080, 'play request while the rest is arriving; rotation 90, 1920x1080 (' + JSON.stringify(t9 && { rot: t9.rot, w: t9.w, h: t9.h, done: t9.done }) + ')');
+  var whole9 = await rq('GET', '/v/t9.mp4');
+  ok(Buffer.compare(whole9.b, tailFile) === 0, 'stream (tail already there, head arriving) is byte-exact');
+  var tail9 = await rq('GET', '/v/t9.mp4', { headers: { Range: 'bytes=' + tStart + '-' } });
+  ok(Buffer.compare(tail9.b, moov) === 0, 'Range on the index part');
+  var hd = await headP; ok(hd.j && hd.j.done, 'head completes the file');
+  ok(Buffer.compare(fs.readFileSync(path.join(DATA, 't9.mp4')), tailFile) === 0, 'stored file byte-exact');
+  ok((await rq('POST', '/api/ctl?a=rot&k=' + CODE, { lan: true })).j.ok, 'rotate command accepted');
+  // normal file without tail-first: rotation found after completion
+  var plain = Buffer.concat([box('ftyp', 32), box('mdat', 100000), moov]);
+  await rq('POST', '/api/up/p1?k=' + CODE + '&size=' + plain.length + '&name=p.mp4&off=0', { lan: true, body: plain });
+  s = await rq('GET', '/api/state');
+  var p1 = s.j.items.filter(function (x) { return x.id === 'p1'; })[0];
+  ok(p1 && p1.done && p1.rot === 90, 'rotation also found in a file sent in one go');
+  await rq('POST', '/api/del/t9?k=' + CODE, { lan: true }); await rq('POST', '/api/del/p1?k=' + CODE, { lan: true });
+
   // the .wgt's own web service: Tizen requires it as a module and calls onStart
   try { process.__n30phone.server.close(); } catch (e) {}
   await sleep(200);

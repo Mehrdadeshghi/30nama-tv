@@ -73,6 +73,7 @@
         try { av.open(String(url)); } catch (e) { P.onError('open ' + (e && e.message || e)); return; }
         av.setDisplayRect(0, 0, 1920, 1080);
         try { av.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX'); } catch (e) {}
+        if (P.rot || state.rotated) be.rotate(P.rot);
         av.setListener({
           onbufferingstart: function () { P.spin(true); },
           onbufferingcomplete: function () { P.spin(false); },
@@ -98,6 +99,12 @@
       },
       play: function () { try { av.play(); } catch (e) {} },
       pause: function () { try { av.pause(); } catch (e) {} },
+      // phone videos: AVPlay ignores the rotation stored in the file, so it is set here (moves the origin: rect again)
+      rotate: function (deg) {
+        state.rotated = !!deg;
+        try { av.setDisplayRotation('PLAYER_DISPLAY_ROTATION_' + (deg ? deg : 'NONE')); } catch (e) { try { console.warn('rotation: ' + e.message); } catch (x) {} }
+        try { av.setDisplayRect(0, 0, 1920, 1080); } catch (e) {}
+      },
       confirmedTime: function () { return state.repN >= 2 ? state.rep : -1; },
       seek: function (sec) { state.repN = 0; state.cur = sec; try { av.seekTo(Math.max(0, Math.floor(sec * 1000)), function () {}, function () {}); } catch (e) { try { av.seekTo(Math.max(0, Math.floor(sec * 1000))); state.cur = sec; } catch (e2) {} } },
       time: function () { return state.cur; },
@@ -131,9 +138,12 @@
   }
   function videoBackend() {
     var v = $('video'), hls = null;
+    function rot(deg) { v.style.transform = deg ? 'rotate(' + deg + 'deg)' + (deg % 180 ? ' scale(0.5625)' : '') : ''; }
     return {
       name: 'video',
+      rotate: rot,
       load: function (url, startSec, cb) {
+        rot(P.rot);
         var started = false;
         var seekFix = startSec > 5;   // AmbiSync-Fork: prüfen, ob die Startzeit wirklich übernommen wurde
         v.ontimeupdate = function () {
@@ -318,6 +328,7 @@
   P.start = function (post, items, index, resume) {
     try { if (N.resume && !(post && post.local)) N.resume.notePost(post); } catch (e) {}
     P.obsFail = 0; P.obsWarned = false; P.lsT = 0;
+    P.rot = (post && post.rot) || 0;
     P.post = post; P.items = items; P.noResume = resume === false; P.resume = resume || null; P.open = true; P.qSel = null; P.chSel = null; P.ctl = -1;
     $('player').classList.remove('hidden');
     P.subPrev = null; SS.apply();
@@ -597,6 +608,14 @@
     g.classList.add('pulse');
   };
   // quiet: from the transport row (its play/pause glyph is the feedback, no centre pulse)
+  // turn the picture by 90° (phone videos); the choice is kept per video by the caller (post.onRot)
+  P.rotate = function () {
+    if (!P.open || !P.be) return;
+    P.rot = ((P.rot || 0) + 90) % 360;
+    if (P.be.rotate) P.be.rotate(P.rot);
+    try { if (P.post && P.post.onRot) P.post.onRot(P.rot); } catch (e) {}
+    P.showOsd();
+  };
   P.togglePause = function (quiet) {
     if (!P.be) return;
     P.paused = !P.paused;
@@ -661,6 +680,9 @@
       else b = N.ui.circle(k, fn);
       b._kind = k; box.appendChild(b); P.btns.push(b);
     });
+    if (P.post && P.post.local) {   // video from the phone: rotate button
+      var rb = N.ui.circle('rotate', function () { P.rotate(); }); rb._kind = 'rot'; box.appendChild(rb); P.btns.push(rb);
+    }
     tp.innerHTML = ''; P.tbtns = [];
     function add(k, icon, fn) { var b = N.ui.circle(icon, fn, 'tp'); b._kind = k; b._tp = true; tp.appendChild(b); P.tbtns.push(b); return b; }
     add('rw', 'back30', function () { P.seekBy(-30, true); });
