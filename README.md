@@ -39,7 +39,7 @@ An unofficial 30nama.com client for Samsung Tizen TVs, designed after the Apple 
 
 1. Turn on Developer Mode on the TV: open Apps, type `12345`, switch Developer mode on, enter your PC's IP address, then reboot the TV.
 2. Install [TizenBrew](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md) on the TV with the TizenBrew Installer (one-time).
-3. In TizenBrew open Module Manager, Add GitHub Module, and enter `miladosos/30nama-tv`.
+3. In TizenBrew open Module Manager, Add GitHub Module, and enter `Mehrdadeshghi/30nama-tv` (this fork; it also has Live TV and "From phone").
 4. Launch "30nama" from the TizenBrew home screen.
 
 Playback uses the TV's HTML5 player here (AVPlay is not available inside TizenBrew).
