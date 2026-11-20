@@ -39,3 +39,4 @@
 .ph-msg .eb{margin-top:12px;max-width:1100px;font-size:29px;line-height:var(--lh-body);color:var(--label-2)}
 .ph-msg .dg{margin-top:28px;max-width:1300px;font-size:21px;line-height:30px;color:var(--label-3);font-family:Vz,sans-serif;word-break:break-word}
 .ph-msg .btn{margin-top:32px}
+.ph-msg .btn+.btn{margin-top:16px}
