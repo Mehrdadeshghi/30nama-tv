@@ -103,6 +103,15 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   await rq('POST', '/api/del/a1?k=' + CODE, { lan: true });
   ok(!fs.existsSync(path.join(DATA, 'a1.mp4')) && (await rq('GET', '/v/a1.mp4')).st === 404, 'delete removes file');
 
+  // the .wgt's own web service: Tizen requires it as a module and calls onStart
+  try { process.__n30phone.server.close(); } catch (e) {}
+  await sleep(200);
+  var ws = require(path.join(__dirname, '..', 'service', 'wgt-service.js'));
+  ok(typeof ws.onStart === 'function' && typeof ws.onExit === 'function' && typeof ws.onRequest === 'function', 'wgt service exports onStart/onRequest/onExit');
+  ws.onStart(); ws.onRequest(); await sleep(300);
+  s = await rq('GET', '/api/state');
+  ok(s.st === 200 && s.j.code === CODE && s.j.items.length === 2, 'wgt service serves the same state (one server despite onRequest)');
+  ws.onExit();
   try { process.__n30phone.server.close(); } catch (e) {}
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log(bad ? bad + ' failure(s)' : 'all service tests passed');

@@ -15,7 +15,7 @@
       phCode: 'Code {c}', phNewCode: 'New code', phOnTv: 'On this TV', phNone: 'Nothing sent yet.', phPlay: 'Play', phDel: 'Delete',
       phRecv: 'Receiving {p}%', phHalf: 'Incomplete ({p}%)', phNoSvc: 'The phone service is not running.',
       phNoSvcSub: 'Restart TizenBrew once (hold the remote’s power button until the TV restarts), then open 30nama again.',
-      phNoNet: 'The TV has no network address.', phNoStore: 'No storage on the TV for videos was found.', phViaTb: 'Open via TizenBrew', phStarting: 'Asked TizenBrew to start the service – this takes a few seconds. If it stays like this, restart the TV (hold the power button) and send a photo of this screen.', phWait: 'Waiting for the video…', phDelQ: 'Delete this video from the TV?', phGone: 'This video is no longer on the TV.'
+      phNoNet: 'The TV has no network address.', phNoStore: 'No storage on the TV for videos was found.', phViaTb: 'Open via TizenBrew', phStarting: 'The service is being started – this takes a few seconds. If it stays like this, restart the TV (hold the power button) and send a photo of this screen.', phWait: 'Waiting for the video…', phDelQ: 'Delete this video from the TV?', phGone: 'This video is no longer on the TV.'
     },
     fa: {
       phone: 'از گوشی', phTitle: 'ویدیو از گوشی', phSub: 'ویدیوهای تلگرام یا گالری با فایل اصلی اینجا پخش می‌شوند – تصویر و صدای کامل، بدون آینه‌کردن صفحه.',
@@ -24,7 +24,7 @@
       phCode: 'کد {c}', phNewCode: 'کد جدید', phOnTv: 'روی تلویزیون', phNone: 'هنوز ویدیویی ارسال نشده.', phPlay: 'پخش', phDel: 'حذف',
       phRecv: 'در حال دریافت {p}٪', phHalf: 'ناتمام ({p}٪)', phNoSvc: 'سرویس ارسال از گوشی فعال نیست.',
       phNoSvcSub: 'یک بار TizenBrew را از نو اجرا کنید (دکمه پاور ریموت را نگه دارید تا تلویزیون ری‌استارت شود) و دوباره سی‌نما را باز کنید.',
-      phNoNet: 'تلویزیون آدرس شبکه ندارد.', phNoStore: 'جایی برای ذخیره ویدیو روی تلویزیون پیدا نشد.', phViaTb: 'باز کردن از طریق TizenBrew', phStarting: 'از TizenBrew خواسته شد سرویس را اجرا کند – چند ثانیه طول می‌کشد. اگر همین‌طور ماند، تلویزیون را ری‌استارت کنید و از این صفحه عکس بفرستید.', phWait: 'در انتظار ویدیو…', phDelQ: 'این ویدیو از تلویزیون حذف شود؟', phGone: 'این ویدیو دیگر روی تلویزیون نیست.'
+      phNoNet: 'تلویزیون آدرس شبکه ندارد.', phNoStore: 'جایی برای ذخیره ویدیو روی تلویزیون پیدا نشد.', phViaTb: 'باز کردن از طریق TizenBrew', phStarting: 'سرویس در حال اجرا شدن است – چند ثانیه طول می‌کشد. اگر همین‌طور ماند، تلویزیون را ری‌استارت کنید و از این صفحه عکس بفرستید.', phWait: 'در انتظار ویدیو…', phDelQ: 'این ویدیو از تلویزیون حذف شود؟', phGone: 'این ویدیو دیگر روی تلویزیون نیست.'
     }
   });
 
@@ -48,8 +48,25 @@
   PH.onTb = function () { return location.host === '127.0.0.1:8081' && /\/module\//.test(location.pathname || ''); };
   // the same app, served by TizenBrew (its proxy on 127.0.0.1:8081 is what lets the page reach the service)
   PH.tbUrl = function () { return 'http://127.0.0.1:8081/module/' + encodeURIComponent(moduleName()) + '/tizen-app/index.html'; };
+  // installed as a .wgt (page on file://): the server is this package's own web service (config.xml <tizen:service>)
+  PH.packaged = function () { return location.protocol === 'file:' && !!(window.tizen && tizen.application && window.tizen.ApplicationControl); };
+  function launchOwn(done) {
+    var d = PH.diag; d.tb = 'wgt';
+    try {
+      var pkg = tizen.application.getCurrentApplication().appInfo.packageId;
+      tizen.application.launchAppControl(new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/service'), pkg + '.PhoneService',
+        function () { d.svc = 'started'; done(); },
+        function (e) { d.svc = 'failed'; d.err = String((e && (e.name + ': ' + e.message)) || e).slice(0, 160); done(); });
+    } catch (e) { d.svc = 'failed'; d.err = String(e && e.message || e).slice(0, 160); done(); }
+  }
   PH.kick = function (force) {
     var name = moduleName(), d = PH.diag;
+    if (PH.packaged()) {
+      if (!force && (d.kicks >= 3 || Date.now() - d.at < 30000)) return;
+      d.kicks++; d.at = Date.now();
+      launchOwn(function () { notify(); setTimeout(PH.poll, 2500); });
+      return;
+    }
     if (!window.WebSocket) { d.tb = 'nows'; return; }
     if (!force && (d.kicks >= 3 || Date.now() - d.at < 30000)) return;
     d.kicks++; d.at = Date.now();
@@ -149,7 +166,7 @@
     P.start(post, [{ info: { file_id: key }, file: { m3u8: PH.url(it) } }], 0, start ? { file_id: key, time: start } : false);
   };
   // start polling once the app has booted (only where the service can exist)
-  setTimeout(function () { if (PH.available()) PH.poll(); }, 3000);
+  setTimeout(function () { if (!PH.available()) return; if (PH.packaged()) PH.kick(true); PH.poll(); }, 3000);
 
   /* ---------------- screen ---------------- */
   function mb(b) { var m = (b || 0) / 1048576; return m >= 1000 ? N.fmt.num((m / 1024).toFixed(1)) + ' GB' : N.fmt.num(m < 10 ? m.toFixed(1) : Math.round(m)) + ' MB'; }
@@ -246,7 +263,7 @@
         var dg = el('div', 'dg'); dg.dir = 'ltr'; dg.textContent = PH.diagText(); msg.appendChild(dg);
         var rb = ui.btn(N.t('retry'), function () { PH.fails = 0; PH.kick(true); PH.poll(); }, '', 'restart');
         msg.appendChild(rb);
-        if (!PH.onTb() && N.platform === 'tizen') {   // opened some other way: offer the TizenBrew-served copy
+        if (!PH.onTb() && N.platform === 'tizen' && /^https?:$/.test(location.protocol)) {   // opened some other way: offer the TizenBrew-served copy
           msg.appendChild(ui.btn(N.t('phViaTb'), function () { location.href = PH.tbUrl(); }, '', 'play'));
         }
         if (hadMsg || !N.nav.cur || !document.body.contains(N.nav.cur) || root.contains(N.nav.cur)) {

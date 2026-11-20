@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="https://github.com/miladosos/30nama-tv" version="1.2.2" viewmodes="maximized">
-  <tizen:application id="Nama30TvAp.Nama30TV" package="Nama30TvAp" required_version="2.3"/>
+        id="https://github.com/miladosos/30nama-tv" version="1.2.3" viewmodes="maximized">
+  <tizen:application id="Nama30TvAp.Nama30TV" package="Nama30TvAp" required_version="3.0"/>
   <content src="index.html"/>
   <feature name="http://tizen.org/feature/screen.size.all"/>
+  <feature name="http://tizen.org/feature/web.service"/>
   <icon src="icon.png"/>
   <name>30nama</name>
   <name xml:lang="fa">۳۰نما</name>
@@ -14,5 +15,11 @@
   <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
   <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
   <access origin="*" subdomains="true"/>
+  <!-- "From phone": the upload/stream server (tools/build-service.js) as this package's own web service -->
+  <tizen:service id="Nama30TvAp.PhoneService">
+    <tizen:content src="service/wgt-service.js"/>
+    <tizen:name>30namaPhone</tizen:name>
+    <tizen:description>Receives videos from a phone on the home network</tizen:description>
+  </tizen:service>
   <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
 </widget>

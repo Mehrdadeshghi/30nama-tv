@@ -17,8 +17,13 @@ function fail(msg) { bad++; console.error('FAIL ' + msg); }
 })(path.join(APP, 'js'));
 
 // 1b. the TizenBrew service (Node 4.4.3 on 2018 TVs) is ES5 too, and service/phone.js is built from service/src/
-try { acorn.parse(fs.readFileSync(path.join(APP, 'service', 'phone.js'), 'utf8'), { ecmaVersion: 5, sourceType: 'script' }); }
-catch (e) { fail('service/phone.js:' + (e.loc ? e.loc.line + ':' + e.loc.column : '') + ' not ES5: ' + e.message); }
+['phone.js', 'wgt-service.js'].forEach(function (f) {
+  try { acorn.parse(fs.readFileSync(path.join(APP, 'service', f), 'utf8'), { ecmaVersion: 5, sourceType: 'script' }); }
+  catch (e) { fail('service/' + f + ':' + (e.loc ? e.loc.line + ':' + e.loc.column : '') + ' not ES5: ' + e.message); }
+});
+var cx = fs.readFileSync(path.join(APP, 'config.xml'), 'utf8'), sv = /<tizen:service id="([^"]+)">\s*<tizen:content src="([^"]+)"/.exec(cx);
+if (!sv || !fs.existsSync(path.join(APP, sv[2]))) fail('config.xml: <tizen:service> missing or its content file does not exist');
+if (sv && !/^Nama30TvAp\./.test(sv[1])) fail('config.xml: service id must be in the app package (Nama30TvAp.)');
 try { require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'build-service.js'), '--check'], { stdio: 'pipe' }); }
 catch (e) { fail(String(e.stderr || e.message).trim()); }
 var pkgJ = JSON.parse(fs.readFileSync(path.join(APP, '..', 'package.json'), 'utf8'));

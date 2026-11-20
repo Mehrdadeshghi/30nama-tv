@@ -595,6 +595,35 @@ function cwPost(id, kind, data) { var t = title(id, kind); t.data = data; return
     } finally { tb.close(); try { process.__n30phone.server.close(); } catch (e) {} }
   });
 
+  await test('phone: installed as .wgt -> the app launches its own web service', async function (np) {
+    var vm = require('vm'), fs = require('fs'), os = require('os'), launched = [];
+    var page = await np();
+    await page.exposeFunction('__launchSvc', function (id) {
+      launched.push(id);
+      process.env.N30PHONE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'n30wgt-'));
+      var mod = { exports: {} }, sb = {}; Object.getOwnPropertyNames(global).forEach(function (k) { if (k !== 'global' && k !== 'module') sb[k] = global[k]; });
+      sb.require = require; sb.module = mod;
+      vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'service', 'wgt-service.js'), 'utf8'), vm.createContext(sb));
+      mod.exports.onStart();
+    });
+    try {
+      await page.goto(BASE);
+      await waitFor(page, function () { return N.nav.cur; }, 8000);
+      await page.evaluate(function () {
+        N.phone.packaged = function () { return true; };
+        window.tizen = window.tizen || {}; tizen.application = tizen.application || {};
+        tizen.application.getCurrentApplication = function () { return { appInfo: { packageId: 'Nama30TvAp' }, exit: function () {} }; };
+        tizen.ApplicationControl = function (op) { this.operation = op; };
+        tizen.application.launchAppControl = function (ac, id, ok) { window.__launchSvc(id).then(function () { ok(); }); };
+        N.phone.fails = 0; N.phone.diag.at = 0; N.phone.diag.kicks = 0;
+        N.go('phone', {}, { reset: true });
+      });
+      await waitFor(page, function () { return document.querySelector('.ph-qr .qr svg') && !document.querySelector('.ph-qr').classList.contains('hidden'); }, 25000, 'own service started, QR shown');
+      ok(launched[0] === 'Nama30TvAp.PhoneService', 'launched ' + launched[0]);
+      return page;
+    } finally { try { process.__n30phone.server.close(); } catch (e) {} }
+  });
+
   await test('phone: without the service the screen explains what to do', async function (np) {
     var page = await np();
     await page.goto(BASE);

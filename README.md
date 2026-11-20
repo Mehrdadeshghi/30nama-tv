@@ -85,7 +85,9 @@ How: `package.json` declares `serviceFile` (`tizen-app/service/phone.js`), which
 the module starts. It listens on port 8030, keeps the newest 4 videos in TizenBrew's data folder and serves them to AVPlay
 with Range support, also while they are still arriving. Phones need the 4-digit code from the TV (in the QR). Sources:
 `tizen-app/service/src/` (built by `tools/build-service.js`), tests: `tools/service-test.js` and the e2e `phone:` scenarios.
-After the first update TizenBrew has to start once more (hold the remote's power button until the TV restarts) so it
+The installed `.wgt` (no TizenBrew) carries the same server as its own Tizen web service (`config.xml`
+`<tizen:service id="Nama30TvAp.PhoneService">`, `service/wgt-service.js`), which the app launches at start; that needs
+Tizen 3.0+ (2017 TVs and newer). After the first update TizenBrew has to start once more (hold the remote's power button until the TV restarts) so it
 picks up the new `serviceFile`.
 
 ## LG webOS (fork addition)
